@@ -299,7 +299,7 @@ var Keyboard_Space = new function(){
     // howl objects for current song
     var currentSounds = [];
     // reference to current song data
-    var songDatas = [equinoxData, animalsData, electroData, ghetData, kyotoData, aeroData];
+    var songDatas = [equinoxData, animalsData, electroData, ghetData, kyotoData, aeroData, launchpadTestData];
     var currentSongInd = 0;
     var currentSongData = equinoxData;
     // number of chains

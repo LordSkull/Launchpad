@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Launchpad Add Song</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; }
+    body { margin: 0; background: #111; color: #eee; }
+    main { max-width: 1320px; margin: 0 auto; padding: 24px; }
+    h1,h2 { margin: 0 0 12px; }
+    p { line-height: 1.45; }
+    .panel { background: #1d1d1d; border: 1px solid #3a3a3a; border-radius: 10px; padding: 16px; margin: 16px 0; }
+    .meta { display: grid; grid-template-columns: repeat(auto-fit,minmax(210px,1fr)); gap: 12px; }
+    label { display: grid; gap: 6px; font-size: 14px; }
+    input, select, textarea, button { font: inherit; }
+    input, select, textarea { box-sizing: border-box; width: 100%; background: #101010; color: #eee; border: 1px solid #555; border-radius: 6px; padding: 8px; }
+    textarea { min-height: 92px; }
+    button { border: 1px solid #666; border-radius: 7px; background: #292929; color: #fff; padding: 9px 13px; cursor: pointer; }
+    button:hover { background: #363636; }
+    button.primary { font-weight: 700; }
+    .chain-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .chain-tabs button.active { outline: 2px solid currentColor; }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+    .pad-grid { display: grid; grid-template-columns: repeat(12, minmax(72px,1fr)); gap: 7px; overflow-x: auto; }
+    .pad { min-width: 72px; border: 1px solid #444; border-radius: 7px; padding: 7px; background: #181818; }
+    .pad strong { display: block; margin-bottom: 5px; }
+    .pad .hold { display: flex; grid-template-columns: auto 1fr; align-items: center; gap: 6px; margin-top: 7px; }
+    .pad .hold input { width: auto; }
+    .status { white-space: pre-wrap; background: #0b0b0b; border: 1px solid #444; padding: 12px; border-radius: 7px; min-height: 40px; }
+    .good { color: #b9f7bf; }
+    .bad { color: #ffb0b0; }
+    .muted { opacity: .75; font-size: 13px; }
+    code { background: #0b0b0b; padding: 2px 5px; border-radius: 4px; }
+    @media (max-width: 900px) { .pad-grid { grid-template-columns: repeat(6, minmax(90px,1fr)); } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Launchpad — Add Song</h1>
+  <p>Choose an existing Launchpad-format ZIP, map its MP3 samples to the 48 pads of each chain, then export <code>song.json</code>. The Ruby installer validates and installs it without manual edits to <code>keyboard.js</code>.</p>
+
+  <section class="panel">
+    <h2>1. Song metadata</h2>
+    <div class="meta">
+      <label>Song name
+        <input id="songName" placeholder="Artist - Title">
+      </label>
+      <label>BPM
+        <input id="bpm" type="number" min="1" step="0.01" value="128">
+      </label>
+      <label>Song ID <span class="muted">optional; blank = auto</span>
+        <input id="songNumber" type="number" min="1" step="1">
+      </label>
+      <label>ZIP filename <span class="muted">without .zip</span>
+        <input id="filename" placeholder="my_song">
+      </label>
+      <label>JavaScript variable <span class="muted">auto-generated if blank</span>
+        <input id="variableName" placeholder="mySongData">
+      </label>
+      <label>Sound ZIP
+        <input id="zipInput" type="file" accept=".zip,application/zip">
+      </label>
+    </div>
+    <div id="zipStatus" class="status muted">No ZIP selected.</div>
+  </section>
+
+  <section class="panel">
+    <h2>2. Pad mappings</h2>
+    <div class="chain-tabs" id="chainTabs"></div>
+    <div class="toolbar">
+      <button id="autoFill">Auto-fill this chain sequentially</button>
+      <button id="clearChain">Clear this chain</button>
+    </div>
+    <div id="padGrid" class="pad-grid"></div>
+  </section>
+
+  <section class="panel">
+    <h2>3. Linked groups</h2>
+    <p class="muted">Optional. One group per line. Use pad labels, separated by commas. Example: <code>1,Q,A,Z</code>. When one pad in a group plays, the others are stopped.</p>
+    <div class="meta" id="linkedEditors"></div>
+  </section>
+
+  <section class="panel">
+    <h2>4. Validate and export</h2>
+    <div class="toolbar">
+      <button id="validateBtn">Validate</button>
+      <button class="primary" id="exportBtn">Export song.json</button>
+    </div>
+    <div id="result" class="status muted">Configure the song, then validate.</div>
+    <p class="muted">Then run from the Launchpad repo:</p>
+    <pre class="status">bundle _1.17.3_ exec ruby script/song_tool.rb validate C:\path\song.json C:\path\sounds.zip
+bundle _1.17.3_ exec ruby script/song_tool.rb install  C:\path\song.json C:\path\sounds.zip</pre>
+  </section>
+
+  <script src="/song_builder.js"></script>
+</main>
+</body>
+</html>

@@ -1,0 +1,336 @@
+(function () {
+  'use strict';
+
+  var CHAINS = ['chain1', 'chain2', 'chain3', 'chain4'];
+  var PAD_LABELS = [
+    '1','2','3','4','5','6','7','8','9','0','-','=',
+    'Q','W','E','R','T','Y','U','I','O','P','[',']',
+    'A','S','D','F','G','H','J','K','L',';','\'','ENTER',
+    'Z','X','C','V','B','N','M',',','.','/','SHIFT','NA'
+  ];
+
+  var state = {
+    activeChain: 0,
+    zipFile: null,
+    zipEntries: [],
+    samples: { chain1: [], chain2: [], chain3: [], chain4: [] },
+    mappings: { chain1: blank48(), chain2: blank48(), chain3: blank48(), chain4: blank48() },
+    holdToPlay: { chain1: new Set(), chain2: new Set(), chain3: new Set(), chain4: new Set() }
+  };
+
+  function blank48() { return Array(48).fill(''); }
+  function $(id) { return document.getElementById(id); }
+
+  function init() {
+    renderTabs();
+    renderLinkedEditors();
+    renderPads();
+
+    $('zipInput').addEventListener('change', onZipSelected);
+    $('filename').addEventListener('input', function () {
+      if (!$('variableName').dataset.touched) $('variableName').value = variableFromFilename(this.value);
+    });
+    $('variableName').addEventListener('input', function () { this.dataset.touched = '1'; });
+    $('autoFill').addEventListener('click', autoFill);
+    $('clearChain').addEventListener('click', clearChain);
+    $('validateBtn').addEventListener('click', function () { showValidation(validate()); });
+    $('exportBtn').addEventListener('click', exportJson);
+  }
+
+  function renderTabs() {
+    var host = $('chainTabs');
+    host.innerHTML = '';
+    CHAINS.forEach(function (chain, i) {
+      var b = document.createElement('button');
+      b.textContent = 'Chain ' + (i + 1);
+      if (i === state.activeChain) b.className = 'active';
+      b.addEventListener('click', function () { state.activeChain = i; renderTabs(); renderPads(); });
+      host.appendChild(b);
+    });
+  }
+
+  function renderLinkedEditors() {
+    var host = $('linkedEditors');
+    host.innerHTML = '';
+    CHAINS.forEach(function (chain, i) {
+      var label = document.createElement('label');
+      label.textContent = 'Chain ' + (i + 1) + ' linked groups';
+      var ta = document.createElement('textarea');
+      ta.id = 'linked-' + chain;
+      ta.placeholder = '1,Q,A,Z\n2,W,S,X';
+      label.appendChild(ta);
+      host.appendChild(label);
+    });
+  }
+
+  function renderPads() {
+    var host = $('padGrid');
+    var chain = CHAINS[state.activeChain];
+    var samples = state.samples[chain];
+    host.innerHTML = '';
+
+    for (var i = 0; i < 48; i++) {
+      (function (padIndex) {
+        var card = document.createElement('div');
+        card.className = 'pad';
+
+        var title = document.createElement('strong');
+        title.textContent = PAD_LABELS[padIndex] + '  #' + padIndex;
+        card.appendChild(title);
+
+        var select = document.createElement('select');
+        addOption(select, '', '(none)');
+        samples.forEach(function (sample) { addOption(select, sample, sample); });
+        select.value = state.mappings[chain][padIndex] || '';
+        select.addEventListener('change', function () { state.mappings[chain][padIndex] = this.value; });
+        card.appendChild(select);
+
+        var hold = document.createElement('label');
+        hold.className = 'hold';
+        var cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = state.holdToPlay[chain].has(padIndex);
+        cb.addEventListener('change', function () {
+          if (this.checked) state.holdToPlay[chain].add(padIndex);
+          else state.holdToPlay[chain].delete(padIndex);
+        });
+        hold.appendChild(cb);
+        hold.appendChild(document.createTextNode('hold to play'));
+        card.appendChild(hold);
+
+        host.appendChild(card);
+      })(i);
+    }
+  }
+
+  function addOption(select, value, text) {
+    var o = document.createElement('option');
+    o.value = value;
+    o.textContent = text;
+    select.appendChild(o);
+  }
+
+  async function onZipSelected(event) {
+    var file = event.target.files && event.target.files[0];
+    if (!file) return;
+    state.zipFile = file;
+    $('zipStatus').textContent = 'Reading ZIP directory...';
+
+    try {
+      var entries = await listZipEntries(file);
+      state.zipEntries = entries;
+      state.samples = { chain1: [], chain2: [], chain3: [], chain4: [] };
+
+      entries.forEach(function (entry) {
+        var normalized = entry.replace(/\\/g, '/');
+        var m = normalized.match(/^sounds\/chain([1-4])\/(.+)\.mp3$/);
+        if (m) state.samples['chain' + m[1]].push(m[2]);
+      });
+
+      CHAINS.forEach(function (chain) {
+        state.samples[chain] = unique(state.samples[chain]).sort(naturalSort);
+      });
+
+      if (!$('filename').value) {
+        $('filename').value = file.name.replace(/\.zip$/i, '').replace(/[^A-Za-z0-9_-]+/g, '_');
+        if (!$('variableName').dataset.touched) $('variableName').value = variableFromFilename($('filename').value);
+      }
+
+      var counts = CHAINS.map(function (c, i) { return 'chain' + (i + 1) + ': ' + state.samples[c].length + ' MP3'; });
+      var junk = entries.filter(function (e) { return e.indexOf('__MACOSX/') === 0 || /(^|\/)\.DS_Store$/.test(e); }).length;
+      $('zipStatus').className = 'status good';
+      $('zipStatus').textContent = 'ZIP read successfully.\n' + counts.join(' | ') + (junk ? '\nNote: ' + junk + ' macOS metadata entries found.' : '');
+      renderPads();
+    } catch (err) {
+      $('zipStatus').className = 'status bad';
+      $('zipStatus').textContent = 'Could not read ZIP: ' + err.message;
+    }
+  }
+
+  function autoFill() {
+    var chain = CHAINS[state.activeChain];
+    state.mappings[chain] = blank48();
+    state.samples[chain].slice(0, 48).forEach(function (sample, i) { state.mappings[chain][i] = sample; });
+    renderPads();
+  }
+
+  function clearChain() {
+    var chain = CHAINS[state.activeChain];
+    state.mappings[chain] = blank48();
+    state.holdToPlay[chain].clear();
+    renderPads();
+  }
+
+  function buildManifest() {
+    var songNumRaw = $('songNumber').value.trim();
+    return {
+      song_number: songNumRaw ? Number(songNumRaw) : null,
+      song_name: $('songName').value.trim(),
+      bpm: Number($('bpm').value),
+      filename: $('filename').value.trim(),
+      variable_name: $('variableName').value.trim() || variableFromFilename($('filename').value.trim()),
+      mappings: cloneMappings(),
+      holdToPlay: {
+        chain1: sortedNumbers(state.holdToPlay.chain1),
+        chain2: sortedNumbers(state.holdToPlay.chain2),
+        chain3: sortedNumbers(state.holdToPlay.chain3),
+        chain4: sortedNumbers(state.holdToPlay.chain4)
+      },
+      linkedAreas: {
+        chain1: parseLinked($('linked-chain1').value),
+        chain2: parseLinked($('linked-chain2').value),
+        chain3: parseLinked($('linked-chain3').value),
+        chain4: parseLinked($('linked-chain4').value)
+      }
+    };
+  }
+
+  function validate() {
+    var data;
+    var errors = [];
+    var warnings = [];
+    try {
+      data = buildManifest();
+    } catch (err) {
+      return { data: null, errors: [err.message], warnings: [] };
+    }
+
+    if (!data.song_name) errors.push('Song name is required.');
+    if (!(data.bpm > 0)) errors.push('BPM must be greater than 0.');
+    if (!/^[A-Za-z0-9_-]+$/.test(data.filename)) errors.push('ZIP filename may contain only letters, numbers, _ and -.');
+    if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(data.variable_name)) errors.push('JavaScript variable name is invalid.');
+    if (data.song_number !== null && (!(Number.isInteger(data.song_number)) || data.song_number < 1)) errors.push('Song ID must be a positive integer or blank.');
+    if (!state.zipFile) errors.push('Select a sound ZIP.');
+
+    CHAINS.forEach(function (chain, ci) {
+      if (data.mappings[chain].length !== 48) errors.push(chain + ' does not contain 48 pad positions.');
+      data.mappings[chain].forEach(function (sample, pad) {
+        if (!sample) return;
+        var expected = 'sounds/chain' + (ci + 1) + '/' + sample + '.mp3';
+        if (state.zipEntries.indexOf(expected) < 0) errors.push(chain + ' pad ' + PAD_LABELS[pad] + ' references missing ' + expected);
+      });
+      data.linkedAreas[chain].forEach(function (group, gi) {
+        if (group.length < 2) warnings.push(chain + ' linked group ' + (gi + 1) + ' has fewer than 2 pads.');
+      });
+    });
+
+    return { data: data, errors: errors, warnings: warnings };
+  }
+
+  function showValidation(result) {
+    var el = $('result');
+    if (result.errors.length) {
+      el.className = 'status bad';
+      el.textContent = 'INVALID\n- ' + result.errors.join('\n- ') + (result.warnings.length ? '\n\nWarnings:\n- ' + result.warnings.join('\n- ') : '');
+    } else {
+      el.className = 'status good';
+      el.textContent = 'VALID — ready to export.' + (result.warnings.length ? '\nWarnings:\n- ' + result.warnings.join('\n- ') : '');
+    }
+  }
+
+  function exportJson() {
+    var result = validate();
+    showValidation(result);
+    if (result.errors.length) return;
+
+    var blob = new Blob([JSON.stringify(result.data, null, 2) + '\n'], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = (result.data.filename || 'song') + '.song.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  function cloneMappings() {
+    return {
+      chain1: state.mappings.chain1.slice(),
+      chain2: state.mappings.chain2.slice(),
+      chain3: state.mappings.chain3.slice(),
+      chain4: state.mappings.chain4.slice()
+    };
+  }
+
+  function parseLinked(text) {
+    if (!text.trim()) return [];
+    var groups = [];
+    text.split(/\r?\n/).forEach(function (line) {
+      line = line.trim();
+      if (!line) return;
+      var values = line.split(',').map(function (v) { return v.trim(); }).filter(Boolean);
+      var group = [];
+      values.forEach(function (label) {
+        var idx = padIndex(label);
+        if (idx < 0) throw new Error('Unknown pad label in linked groups: ' + label);
+        if (group.indexOf(idx) < 0) group.push(idx);
+      });
+      groups.push(group);
+    });
+    return groups;
+  }
+
+  function padIndex(label) {
+    var normalized = label.toUpperCase();
+    if (normalized === 'RETURN') normalized = 'ENTER';
+    if (normalized === 'SPACE') normalized = 'NA';
+    for (var i = 0; i < PAD_LABELS.length; i++) {
+      if (PAD_LABELS[i].toUpperCase() === normalized) return i;
+    }
+    var asNum = Number(label);
+    if (Number.isInteger(asNum) && asNum >= 0 && asNum < 48) return asNum;
+    return -1;
+  }
+
+  function sortedNumbers(set) { return Array.from(set).sort(function (a, b) { return a - b; }); }
+  function unique(arr) { return arr.filter(function (v, i) { return arr.indexOf(v) === i; }); }
+  function naturalSort(a, b) { return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }); }
+
+  function variableFromFilename(value) {
+    var parts = value.split(/[^A-Za-z0-9]+/).filter(Boolean);
+    if (!parts.length) return 'songData';
+    var first = parts.shift();
+    if (/^\d/.test(first)) first = 'song' + first;
+    return first + parts.map(function (p) { return p.charAt(0).toUpperCase() + p.slice(1); }).join('') + 'Data';
+  }
+
+  // Lists filenames using the ZIP central directory. It does not decompress audio.
+  async function listZipEntries(file) {
+    var buffer = await file.arrayBuffer();
+    var bytes = new Uint8Array(buffer);
+    var view = new DataView(buffer);
+    var eocd = findSignatureBackwards(bytes, [0x50, 0x4b, 0x05, 0x06], Math.max(0, bytes.length - 65557));
+    if (eocd < 0) throw new Error('ZIP end-of-central-directory record not found.');
+
+    var cdSize = view.getUint32(eocd + 12, true);
+    var cdOffset = view.getUint32(eocd + 16, true);
+    if (cdSize === 0xffffffff || cdOffset === 0xffffffff) throw new Error('ZIP64 is not supported by this MVP.');
+
+    var decoder = new TextDecoder('utf-8');
+    var entries = [];
+    var pos = cdOffset;
+    var end = cdOffset + cdSize;
+
+    while (pos < end) {
+      if (view.getUint32(pos, true) !== 0x02014b50) throw new Error('Invalid ZIP central directory at byte ' + pos + '.');
+      var nameLen = view.getUint16(pos + 28, true);
+      var extraLen = view.getUint16(pos + 30, true);
+      var commentLen = view.getUint16(pos + 32, true);
+      var nameBytes = bytes.slice(pos + 46, pos + 46 + nameLen);
+      entries.push(decoder.decode(nameBytes).replace(/\\/g, '/'));
+      pos += 46 + nameLen + extraLen + commentLen;
+    }
+    return entries;
+  }
+
+  function findSignatureBackwards(bytes, sig, min) {
+    outer: for (var i = bytes.length - sig.length; i >= min; i--) {
+      for (var j = 0; j < sig.length; j++) if (bytes[i + j] !== sig[j]) continue outer;
+      return i;
+    }
+    return -1;
+  }
+
+  window.addEventListener('DOMContentLoaded', init);
+})();
