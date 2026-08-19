@@ -1,16 +1,18 @@
 source 'https://rubygems.org'
 
 # ruby version
-ruby "2.2.1"
+ruby "2.6.10"
 # Bundle edge Rails instead: gem 'rails', github: 'rails/rails'
 gem 'rails', '4.2.10'
+gem 'nokogiri', '1.10.10'
+gem 'ffi', '1.10.0'
 #testing
 group :development do
   gem 'sqlite3'
 end
 #heroku
 group :production do
-  gem 'pg', '~> 0.21.0'
+  gem 'pg', '1.1.4'
   gem 'rails_12factor'
 end
 # Use SCSS for stylesheets
