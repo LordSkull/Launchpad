@@ -37,8 +37,8 @@
 </head>
 <body>
 <main>
-  <h1>Launchpad — Add Song</h1>
-  <p>Choose a Launchpad-format ZIP, map its MP3 samples to the 48 pads of each chain, validate it, then install it directly into the local Launchpad project. No manual edit to <code>keyboard.js</code> is required.</p>
+  <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap"><div><h1>Launchpad — Add Song</h1><a href="/" data-turbolinks="false" onclick="window.location.href='/'; return false;">← Back to Launchpad</a></div><a href="/manage_songs.html" data-turbolinks="false">Manage Songs</a></div>
+  <p>Choose a Launchpad-format ZIP, map its MP3 samples to the 48 pads of each chain, validate it, then install it into <code>user_data/songs/</code>. No source-code edit is required.</p>
 
   <section class="panel">
     <h2>1. Song metadata</h2>
@@ -54,9 +54,6 @@
       </label>
       <label>ZIP filename <span class="muted">without .zip</span>
         <input id="filename" placeholder="my_song">
-      </label>
-      <label>JavaScript variable <span class="muted">auto-generated if blank</span>
-        <input id="variableName" placeholder="mySongData">
       </label>
       <label>Sound ZIP
         <input id="zipInput" type="file" accept=".zip,application/zip">
@@ -81,8 +78,6 @@
     <div class="meta" id="linkedEditors"></div>
   </section>
 
-
-
   <section class="panel">
     <h2>4. Validate and install</h2>
     <div class="toolbar">
@@ -91,14 +86,8 @@
       <button class="primary" id="installBtn">Install Song</button>
     </div>
     <div id="result" class="status muted">Configure the song, then validate.</div>
-    <p class="muted"><strong>Install Song</strong> is development-only. The server validates the package again before writing the ZIP, Data.js file, or song registration.</p>
+    <p class="muted"><strong>Install Song</strong> is development-only. The server validates the package again before writing anything to user_data.</p>
   </section>
-
-  <a href="/"
-   data-turbolinks="false"
-   onclick="window.location.href='/'; return false;">
-  ← Back to Launchpad
-</a>
 
   <script src="/song_builder.js"></script>
 </main>

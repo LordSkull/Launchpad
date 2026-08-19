@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Launchpad — Manage Songs</title>
+  <style>
+    body { margin: 0; background: #101010; color: #eee; font-family: Arial, sans-serif; }
+    main { max-width: 900px; margin: 32px auto; padding: 0 18px 40px; }
+    a { color: #d9d9ff; }
+    .top { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+    .panel { background:#191919; border:1px solid #444; border-radius:9px; padding:18px; margin:18px 0; }
+    .song { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:12px 0; border-bottom:1px solid #333; }
+    .song:last-child { border-bottom:0; }
+    .meta { opacity:.7; font-size:13px; margin-top:4px; }
+    .badge { display:inline-block; padding:3px 8px; border:1px solid #555; border-radius:999px; font-size:12px; opacity:.8; }
+    button { border:1px solid #777; background:#222; color:#fff; padding:8px 12px; border-radius:6px; cursor:pointer; }
+    button.remove { border-color:#9a5555; }
+    button:disabled { opacity:.5; cursor:wait; }
+    .status { white-space:pre-wrap; padding:11px; background:#0a0a0a; border:1px solid #333; border-radius:7px; min-height:20px; }
+    .bad { color:#ffb6b6; }
+    .good { color:#baf7bd; }
+  </style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <div>
+      <h1>Manage Songs</h1>
+      <a href="/" data-turbolinks="false" onclick="window.location.href='/'; return false;">← Back to Launchpad</a>
+    </div>
+    <a href="/song_builder.html" data-turbolinks="false">+ Add Song</a>
+  </div>
+
+  <section class="panel">
+    <h2>Built-in songs</h2>
+    <p>These ship with Launchpad and are protected from removal here.</p>
+    <div class="song"><div>Equinox<div class="meta">eq.zip</div></div><span class="badge">Built-in</span></div>
+    <div class="song"><div>Animals<div class="meta">animals.zip</div></div><span class="badge">Built-in</span></div>
+    <div class="song"><div>Electro<div class="meta">electro.zip</div></div><span class="badge">Built-in</span></div>
+    <div class="song"><div>Ghet<div class="meta">ghet.zip</div></div><span class="badge">Built-in</span></div>
+    <div class="song"><div>Kyoto<div class="meta">kyoto.zip</div></div><span class="badge">Built-in</span></div>
+    <div class="song"><div>Aero<div class="meta">aero.zip</div></div><span class="badge">Built-in</span></div>
+  </section>
+
+  <section class="panel">
+    <h2>Your songs</h2>
+    <div id="userSongs">Loading…</div>
+  </section>
+
+  <div id="status" class="status">Ready.</div>
+</main>
+<script src="/manage_songs.js"></script>
+</body>
+</html>

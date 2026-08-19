@@ -256,113 +256,25 @@ class SongManifest
   end
 end
 
-class Installer
-  SONG_DATAS_RE = /var\s+songDatas\s*=\s*\[([^\]]*)\];/
+require_relative 'song_store'
 
+class Installer
   def initialize(manifest, repo_root)
     @manifest = manifest
     @repo_root = File.expand_path(repo_root)
   end
 
   def install!
-    ensure_repo!
-    number = resolved_song_number
-    ensure_unique!(number)
+    result = UserSongStore.new(@repo_root).install!(@manifest)
 
-    data = deep_copy(@manifest.data)
-    data.delete('variable_name')
-    data['song_number'] = number
-
-    js_path = File.join(@repo_root, 'app', 'assets', 'javascripts', "data_#{@manifest.variable_name}.js")
-    zip_path = File.join(@repo_root, 'public', 'zip', 'sounds', "#{@manifest.filename}.zip")
-    keyboard_path = File.join(@repo_root, 'app', 'assets', 'javascripts', 'keyboard.js')
-    keyboard_before = File.read(keyboard_path, encoding: 'UTF-8')
-
-    raise "Refusing to overwrite existing #{js_path}" if File.exist?(js_path)
-    raise "Refusing to overwrite existing #{zip_path}" if File.exist?(zip_path)
-
-    File.write(js_path, "var #{@manifest.variable_name} = #{JSON.pretty_generate(data)};\n", mode: 'w', encoding: 'UTF-8')
-    FileUtils.cp(@manifest.zip_path, zip_path)
-    register_song!(keyboard_path)
-
-    result = {
-      'data_path' => relative(js_path),
-      'zip_path' => relative(zip_path),
-      'song_number' => number,
-      'variable_name' => @manifest.variable_name
-    }
-
-    puts "Installed successfully:"
-    puts "  Data: #{result['data_path']}"
-    puts "  ZIP:  #{result['zip_path']}"
-    puts "  ID:   #{number}"
-    puts "  Var:  #{@manifest.variable_name}"
+    puts "Installed successfully in user_data:"
+    puts "  Manifest: #{result['manifest_path']}"
+    puts "  ZIP:      #{result['zip_path']}"
+    puts "  ID:       #{result['song_number']}"
     puts
-    puts 'Restart Rails (or hard-refresh in development) and test the new song.'
+    puts 'Reload the Launchpad page to see the new song.'
 
     result
-  rescue StandardError
-    FileUtils.rm_f(js_path) if defined?(js_path) && js_path && File.exist?(js_path)
-    FileUtils.rm_f(zip_path) if defined?(zip_path) && zip_path && File.exist?(zip_path)
-    if defined?(keyboard_before) && keyboard_before && defined?(keyboard_path) && keyboard_path
-      File.write(keyboard_path, keyboard_before, mode: 'w', encoding: 'UTF-8')
-    end
-    raise
-  end
-
-  private
-
-  def ensure_repo!
-    required = [
-      File.join(@repo_root, 'app', 'assets', 'javascripts', 'keyboard.js'),
-      File.join(@repo_root, 'public', 'zip', 'sounds')
-    ]
-    missing = required.reject { |p| File.exist?(p) }
-    raise "This does not look like the Launchpad repo: missing #{missing.join(', ')}" if missing.any?
-  end
-
-  def existing_song_numbers
-    Dir.glob(File.join(@repo_root, 'app', 'assets', 'javascripts', '*.js')).map do |path|
-      text = File.read(path, encoding: 'UTF-8')
-      text.scan(/[\"']?song_number[\"']?\s*:\s*(\d+)/).flatten.map(&:to_i)
-    rescue Encoding::InvalidByteSequenceError
-      []
-    end.flatten.uniq
-  end
-
-  def resolved_song_number
-    @manifest.song_number || ((existing_song_numbers.max || 0) + 1)
-  end
-
-  def ensure_unique!(number)
-    if existing_song_numbers.include?(number)
-      raise "song_number #{number} already exists. Leave song_number blank in the builder to auto-assign, or choose a different ID."
-    end
-
-    keyboard = File.read(File.join(@repo_root, 'app', 'assets', 'javascripts', 'keyboard.js'), encoding: 'UTF-8')
-    if keyboard.match?(/\b#{Regexp.escape(@manifest.variable_name)}\b/)
-      raise "#{@manifest.variable_name} is already registered in keyboard.js"
-    end
-  end
-
-  def register_song!(keyboard_path)
-    text = File.read(keyboard_path, encoding: 'UTF-8')
-    match = text.match(SONG_DATAS_RE)
-    raise 'Could not find var songDatas = [...] in keyboard.js' unless match
-
-    vars = match[1].split(',').map(&:strip).reject(&:empty?)
-    vars << @manifest.variable_name
-    replacement = "var songDatas = [#{vars.join(', ')}];"
-    text.sub!(SONG_DATAS_RE, replacement)
-    File.write(keyboard_path, text, mode: 'w', encoding: 'UTF-8')
-  end
-
-  def deep_copy(obj)
-    JSON.parse(JSON.generate(obj))
-  end
-
-  def relative(path)
-    path.sub(@repo_root + File::SEPARATOR, '')
   end
 end
 
@@ -372,7 +284,7 @@ def usage!
       bundle exec ruby script/song_tool.rb validate PATH_TO/song.json PATH_TO/sounds.zip
       bundle exec ruby script/song_tool.rb install  PATH_TO/song.json PATH_TO/sounds.zip
 
-    The install command must be run from inside the Launchpad repository.
+    User songs are stored under user_data/songs/. The install command must be run from inside the Launchpad repository.
   TEXT
   exit 2
 end
@@ -395,7 +307,6 @@ if __FILE__ == $PROGRAM_NAME
   puts "  Name: #{manifest.data['song_name']}"
   puts "  BPM:  #{manifest.data['bpm']}"
   puts "  ZIP:  #{manifest.filename}.zip"
-  puts "  Var:  #{manifest.variable_name}"
   puts "  ID:   #{manifest.song_number || '(auto on install)'}"
 
   Installer.new(manifest, Dir.pwd).install! if command == 'install'

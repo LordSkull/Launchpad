@@ -15,3 +15,7 @@
 /log/*
 !/log/.keep
 /tmp
+
+# User-installed Launchpad songs
+/user_data/songs/*
+!/user_data/songs/.gitkeep

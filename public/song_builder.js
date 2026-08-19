@@ -27,10 +27,6 @@
     renderPads();
 
     $('zipInput').addEventListener('change', onZipSelected);
-    $('filename').addEventListener('input', function () {
-      if (!$('variableName').dataset.touched) $('variableName').value = variableFromFilename(this.value);
-    });
-    $('variableName').addEventListener('input', function () { this.dataset.touched = '1'; });
     $('autoFill').addEventListener('click', autoFill);
     $('clearChain').addEventListener('click', clearChain);
     $('validateBtn').addEventListener('click', function () { showValidation(validate()); });
@@ -134,7 +130,6 @@
 
       if (!$('filename').value) {
         $('filename').value = file.name.replace(/\.zip$/i, '').replace(/[^A-Za-z0-9_-]+/g, '_');
-        if (!$('variableName').dataset.touched) $('variableName').value = variableFromFilename($('filename').value);
       }
 
       var counts = CHAINS.map(function (c, i) { return 'chain' + (i + 1) + ': ' + state.samples[c].length + ' MP3'; });
@@ -165,11 +160,11 @@
   function buildManifest() {
     var songNumRaw = $('songNumber').value.trim();
     return {
+      schema_version: 1,
       song_number: songNumRaw ? Number(songNumRaw) : null,
       song_name: $('songName').value.trim(),
       bpm: Number($('bpm').value),
       filename: $('filename').value.trim(),
-      variable_name: $('variableName').value.trim() || variableFromFilename($('filename').value.trim()),
       mappings: cloneMappings(),
       holdToPlay: {
         chain1: sortedNumbers(state.holdToPlay.chain1),
@@ -199,7 +194,6 @@
     if (!data.song_name) errors.push('Song name is required.');
     if (!(data.bpm > 0)) errors.push('BPM must be greater than 0.');
     if (!/^[A-Za-z0-9_-]+$/.test(data.filename)) errors.push('ZIP filename may contain only letters, numbers, _ and -.');
-    if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(data.variable_name)) errors.push('JavaScript variable name is invalid.');
     if (data.song_number !== null && (!(Number.isInteger(data.song_number)) || data.song_number < 1)) errors.push('Song ID must be a positive integer or blank.');
     if (!state.zipFile) errors.push('Select a sound ZIP.');
 
@@ -285,10 +279,10 @@
         'INSTALLED SUCCESSFULLY',
         'Name: ' + payload.song.name,
         'Song ID: ' + payload.song.id,
-        'Data: ' + payload.song.data_path,
+        'Manifest: ' + payload.song.manifest_path,
         'ZIP: ' + payload.song.zip_path,
         '',
-        'Hard-refresh the Launchpad page (Ctrl+Shift+R) and select the new song.'
+        'Reload the Launchpad page and select the new song.'
       ];
       if (payload.warnings && payload.warnings.length) {
         lines.push('', 'Warnings:', '- ' + payload.warnings.join('\n- '));

@@ -1,0 +1,137 @@
+<h1>Online Launchpad</h1>
+
+<% if session[:user_id] != nil %>
+<div id="signout_button"><a href="logout">Sign Out</a></div>
+<% end %>
+
+<div id="video_link" class="link">Watch the video: <a href="https://www.youtube.com/watch?v=TFHcqJc0xa8" target="_blank">Online Launchpad - First of the Year (Equinox)</a></div>
+<div id="video_link" class="link">Watch the tutorial: <a href="https://www.youtube.com/watch?v=tAjIG_cl7ss" target="_blank">Online Launchpad Tutorial</a></div>
+
+<div class="buttons"></div>
+<div id="sound_pack_buttons"></div>
+
+
+
+<p class="soundPack">Loading sounds (0/0)</p>
+<h3 id="error_msg"></h3>
+
+<br>
+<br>
+
+<div id="toggle_editor_container" class="click_button" toggle_id="editor_container_div">Editor</div>
+<div id="info_button" class="click_button" toggle_id="info">Info</div>
+<div id="links_button" class="click_button" toggle_id="links">Links</div>
+<div id="songs_button" class="click_button" toggle_id="songs_container">Songs</div>
+
+<div id="info" class="toggle_container">
+    <p>There is a tutorial <a href="https://www.youtube.com/watch?v=tAjIG_cl7ss" target="_blank">here</a>.</p>
+    <p>Use your keyboard keys to activate the sounds and your arrow keys to switch the soundpack</p>
+    <p>Open up the editor and click the load button to load a song. Adjust the BPM to change the playback speed and learn how to play the song</p>
+    <p>Select songs from the songs tab. More to be added soon</p>
+    <h2>Version 2.0 of this site is currently being worked on! Stay tuned for updates.</h2>
+</div>
+
+<div id="links" class="toggle_container">
+    <div class="link">Here is the link to the Youtube video that inspired me to get a launchpad and create this website: <a href="https://www.youtube.com/watch?v=SAXpBgkXt60" target="_blank">Nev Plays: Skrillex - First of the Year (Equinox) Launchpad Cover</a></div>
+    <div class="link">Here is the link to the tutorial video which has the project file that I recorded all of the sounds for Equinox from: <a href="https://www.youtube.com/watch?v=PUfQXaxGNNA" target="_blank">Nev Teaches: How to Play Skrillex - First of the Year (Equinox) Launchpad Tutorial</a></div>
+    <div class="link">Here is the link to the Animals video: <a href="https://www.youtube.com/watch?v=w4WH3QJ8gAI" target="_blank">Helixus live - Martin Garrix - Animals launchpad performance</a></div>
+    <div class="link">Here is the link to the Electro Mashup video: <a href="https://www.youtube.com/watch?v=kJX_zNuxjAA" target="_blank">Live Launchpad Electro Mashup</a></div>
+    <div class="link">Here is the link to the GHET1 Video: <a href="https://www.youtube.com/watch?v=2G03SPwwrV4" target="_blank">Knife Party vs Skrillex</a></div>
+    <div class="link">Here is the link to the Kyoto Video: <a href="https://www.youtube.com/watch?v=Hvqky7YBljY" target="_blank">Skrillex - KYOTO</a></a></div>
+    <div class="link">Here is the link to the Surface Video: <a href="https://www.youtube.com/watch?v=JFX-OyJcG_c" target="_blank">Aero Chord - Surface</a></a></div>
+</div>
+
+<div id="songs_container" class="toggle_container"></div>
+
+<div id="editor_container_div" class="toggle_container"></div>
+
+<div id="notice">Open up the info tab to learn more about this website and how to use it.</div>
+
+<div id="left_ad">
+  <!--<script>-->
+  <!--      var observer = new MutationObserver(-->
+  <!--        function(mutations) {-->
+  <!--          for(var mutation of mutations) {-->
+  <!--            var html = mutation.addedNodes[0].outerHTML;-->
+  <!--            console.log(html);-->
+  <!--            if(html !== undefined && html.startsWith('<script language="javascript" type="text/javascript" id="')) {-->
+  <!--              html = html.replace(new RegExp('https%3A%2F%2Fagile-spire-1086.herokuapp.com', 'g'), 'http%3A%2F%2Fsafe-eyrie-19152.herokuapp.com');-->
+  <!--              console.log(html);-->
+  <!--              document.write(html);-->
+  <!--              observer.disconnect();-->
+  <!--            }-->
+  <!--          }-->
+  <!--        }-->
+  <!--      );-->
+
+        <!--// configuration of the observer:-->
+  <!--      var config = { attributes: true, childList: true, characterData: true };-->
+
+        <!--// pass in the target node, as well as the observer options-->
+  <!--      observer.observe(document.getElementById('left_ad'), config);-->
+  <!--    </script>-->
+
+  <!--    <script id="mNCC" language="javascript">-->
+  <!--       medianet_width = "160";-->
+  <!--       medianet_height = "600";-->
+  <!--       medianet_crid = "804613893";-->
+  <!--       medianet_versionId = "111299";-->
+  <!--       (function() {-->
+  <!--           var isSSL = 'https:' == document.location.protocol;-->
+  <!--           var mnSrc = (isSSL ? 'https:' : 'http:') + '//contextual.media.net/nmedianet.js?cid=8CUR4D5FF' + (isSSL ? '&https=1' : '');-->
+  <!--           document.write('<scr' + 'ipt type="text/javascript" id="mNSC" src="' + mnSrc + '"></scr' + 'ipt>');-->
+  <!--       })();-->
+  <!--    </script>-->
+</div>
+
+<div id="right_ad">
+  
+</div>
+
+<p>Works best in the most recent version of the Chrome browser.</p>
+
+<div id="footer">
+    <p>This project is entirely open source. If you are a developer, consider contributing to this project <a href="https://github.com/Dan12/Launchpad" target="_blank">here</a>.</p>
+    <span>Made by <a href="https://dan12.github.io" target="_blank">Daniel Weber</a></span>
+    <div id="license">
+        <p>This work is licensed under the <a href="https://github.com/Dan12/Launchpad/blob/master/LICENSE.md" target="_blank">MIT license</a></a>.
+    </div>
+</div>
+
+<div id="gray_background">
+  <div id="close_layover">Close</div>
+</div>
+
+<div id="login_form">
+  <div>
+    <label>Username</label>
+    <input type="text" name="username" id="login_username"/>
+  </div>
+  <div>
+    <label>Password</label>
+    <input type="password" name="password" id="login_password"/>
+  </div>
+  <div id="submit_login">Login</div>
+</div>
+
+<div id="load_songs"></div>
+
+
+<a href="/song_builder.html"
+   class="add-song-button"
+   data-turbolinks="false">
+  + Add Song
+</a>
+
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-78432255-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+<!--<script type="text/javascript"> var infolinks_pid = 2905636; var infolinks_wsid = 0; </script> <script type="text/javascript" src="//resources.infolinks.com/js/infolinks_main.js"></script>-->
