@@ -49,7 +49,7 @@ Scarica o clona questa repository.
 Se usi Git:
 
 ```powershell
-git clone URL_DELLA_TUA_FORK
+git clone https://github.com/LordSkull/Launchpad.git
 cd Launchpad
 ```
 
