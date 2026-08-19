@@ -10,6 +10,9 @@ gem 'ffi', '1.10.0'
 group :development do
   gem 'sqlite3'
 end
+
+gem 'tzinfo-data', platforms: [:mingw, :mswin, :x64_mingw]
+
 #heroku
 group :production do
   gem 'pg', '1.1.4'
