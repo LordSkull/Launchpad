@@ -38,7 +38,7 @@
 <body>
 <main>
   <h1>Launchpad — Add Song</h1>
-  <p>Choose an existing Launchpad-format ZIP, map its MP3 samples to the 48 pads of each chain, then export <code>song.json</code>. The Ruby installer validates and installs it without manual edits to <code>keyboard.js</code>.</p>
+  <p>Choose a Launchpad-format ZIP, map its MP3 samples to the 48 pads of each chain, validate it, then install it directly into the local Launchpad project. No manual edit to <code>keyboard.js</code> is required.</p>
 
   <section class="panel">
     <h2>1. Song metadata</h2>
@@ -81,17 +81,24 @@
     <div class="meta" id="linkedEditors"></div>
   </section>
 
+
+
   <section class="panel">
-    <h2>4. Validate and export</h2>
+    <h2>4. Validate and install</h2>
     <div class="toolbar">
       <button id="validateBtn">Validate</button>
-      <button class="primary" id="exportBtn">Export song.json</button>
+      <button id="exportBtn">Export song.json</button>
+      <button class="primary" id="installBtn">Install Song</button>
     </div>
     <div id="result" class="status muted">Configure the song, then validate.</div>
-    <p class="muted">Then run from the Launchpad repo:</p>
-    <pre class="status">bundle _1.17.3_ exec ruby script/song_tool.rb validate C:\path\song.json C:\path\sounds.zip
-bundle _1.17.3_ exec ruby script/song_tool.rb install  C:\path\song.json C:\path\sounds.zip</pre>
+    <p class="muted"><strong>Install Song</strong> is development-only. The server validates the package again before writing the ZIP, Data.js file, or song registration.</p>
   </section>
+
+  <a href="/"
+   data-turbolinks="false"
+   onclick="window.location.href='/'; return false;">
+  ← Back to Launchpad
+</a>
 
   <script src="/song_builder.js"></script>
 </main>

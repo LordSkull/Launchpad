@@ -1,0 +1,4 @@
+# Add this INSIDE `Rails.application.routes.draw do ... end`
+if Rails.env.development?
+  post '/dev/song_imports' => 'song_imports#create'
+end

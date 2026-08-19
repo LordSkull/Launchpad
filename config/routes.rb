@@ -11,4 +11,9 @@ Rails.application.routes.draw do
   post "/view_all_songs" => "song#view_all"
   
   get "/google13ecc4458e525973" => "application#google13ecc4458e525973"
+
+# Local song installer. Intentionally unavailable outside development.
+if Rails.env.development?
+  post '/dev/song_imports' => 'song_imports#create'
+end
 end

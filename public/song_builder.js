@@ -35,6 +35,7 @@
     $('clearChain').addEventListener('click', clearChain);
     $('validateBtn').addEventListener('click', function () { showValidation(validate()); });
     $('exportBtn').addEventListener('click', exportJson);
+    $('installBtn').addEventListener('click', installSong);
   }
 
   function renderTabs() {
@@ -242,6 +243,66 @@
     a.click();
     a.remove();
     setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  async function installSong() {
+    var result = validate();
+    showValidation(result);
+    if (result.errors.length) return;
+
+    var button = $('installBtn');
+    var previousText = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Installing...';
+
+    var form = new FormData();
+    form.append('manifest', JSON.stringify(result.data));
+    form.append('zip', state.zipFile, state.zipFile.name);
+
+    try {
+      var response = await fetch('/dev/song_imports', {
+        method: 'POST',
+        body: form,
+        credentials: 'same-origin',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      });
+
+      var payload;
+      try {
+        payload = await response.json();
+      } catch (parseError) {
+        throw new Error('Server returned a non-JSON response (HTTP ' + response.status + ').');
+      }
+
+      if (!response.ok || !payload.ok) {
+        var details = [];
+        if (payload.error) details.push(payload.error);
+        if (payload.errors && payload.errors.length) details = details.concat(payload.errors);
+        throw new Error(details.join('\n') || ('Install failed with HTTP ' + response.status + '.'));
+      }
+
+      var lines = [
+        'INSTALLED SUCCESSFULLY',
+        'Name: ' + payload.song.name,
+        'Song ID: ' + payload.song.id,
+        'Data: ' + payload.song.data_path,
+        'ZIP: ' + payload.song.zip_path,
+        '',
+        'Hard-refresh the Launchpad page (Ctrl+Shift+R) and select the new song.'
+      ];
+      if (payload.warnings && payload.warnings.length) {
+        lines.push('', 'Warnings:', '- ' + payload.warnings.join('\n- '));
+      }
+
+      $('result').className = 'status good';
+      $('result').textContent = lines.join('\n');
+    } catch (err) {
+      $('result').className = 'status bad';
+      $('result').textContent = 'INSTALL FAILED\n' + err.message;
+    } finally {
+      button.disabled = false;
+      button.textContent = previousText;
+    }
   }
 
   function cloneMappings() {

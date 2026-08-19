@@ -276,6 +276,7 @@ class Installer
     js_path = File.join(@repo_root, 'app', 'assets', 'javascripts', "data_#{@manifest.variable_name}.js")
     zip_path = File.join(@repo_root, 'public', 'zip', 'sounds', "#{@manifest.filename}.zip")
     keyboard_path = File.join(@repo_root, 'app', 'assets', 'javascripts', 'keyboard.js')
+    keyboard_before = File.read(keyboard_path, encoding: 'UTF-8')
 
     raise "Refusing to overwrite existing #{js_path}" if File.exist?(js_path)
     raise "Refusing to overwrite existing #{zip_path}" if File.exist?(zip_path)
@@ -284,16 +285,28 @@ class Installer
     FileUtils.cp(@manifest.zip_path, zip_path)
     register_song!(keyboard_path)
 
+    result = {
+      'data_path' => relative(js_path),
+      'zip_path' => relative(zip_path),
+      'song_number' => number,
+      'variable_name' => @manifest.variable_name
+    }
+
     puts "Installed successfully:"
-    puts "  Data: #{relative(js_path)}"
-    puts "  ZIP:  #{relative(zip_path)}"
+    puts "  Data: #{result['data_path']}"
+    puts "  ZIP:  #{result['zip_path']}"
     puts "  ID:   #{number}"
     puts "  Var:  #{@manifest.variable_name}"
     puts
     puts 'Restart Rails (or hard-refresh in development) and test the new song.'
+
+    result
   rescue StandardError
     FileUtils.rm_f(js_path) if defined?(js_path) && js_path && File.exist?(js_path)
     FileUtils.rm_f(zip_path) if defined?(zip_path) && zip_path && File.exist?(zip_path)
+    if defined?(keyboard_before) && keyboard_before && defined?(keyboard_path) && keyboard_path
+      File.write(keyboard_path, keyboard_before, mode: 'w', encoding: 'UTF-8')
+    end
     raise
   end
 
@@ -364,26 +377,26 @@ def usage!
   exit 2
 end
 
-command, json_path, zip_path = ARGV
-usage! unless %w[validate install].include?(command) && json_path && zip_path
+if __FILE__ == $PROGRAM_NAME
+  command, json_path, zip_path = ARGV
+  usage! unless %w[validate install].include?(command) && json_path && zip_path
 
-manifest = SongManifest.new(json_path, zip_path).validate!
+  manifest = SongManifest.new(json_path, zip_path).validate!
 
-manifest.warnings.each { |w| puts "WARNING: #{w}" }
-manifest.errors.each { |e| warn "ERROR: #{e}" }
+  manifest.warnings.each { |w| puts "WARNING: #{w}" }
+  manifest.errors.each { |e| warn "ERROR: #{e}" }
 
-unless manifest.valid?
-  warn "\nSong package is INVALID (#{manifest.errors.length} error(s))."
-  exit 1
-end
+  unless manifest.valid?
+    warn "\nSong package is INVALID (#{manifest.errors.length} error(s))."
+    exit 1
+  end
 
-puts "Song package is valid."
-puts "  Name: #{manifest.data['song_name']}"
-puts "  BPM:  #{manifest.data['bpm']}"
-puts "  ZIP:  #{manifest.filename}.zip"
-puts "  Var:  #{manifest.variable_name}"
-puts "  ID:   #{manifest.song_number || '(auto on install)'}"
+  puts "Song package is valid."
+  puts "  Name: #{manifest.data['song_name']}"
+  puts "  BPM:  #{manifest.data['bpm']}"
+  puts "  ZIP:  #{manifest.filename}.zip"
+  puts "  Var:  #{manifest.variable_name}"
+  puts "  ID:   #{manifest.song_number || '(auto on install)'}"
 
-if command == 'install'
-  Installer.new(manifest, Dir.pwd).install!
+  Installer.new(manifest, Dir.pwd).install! if command == 'install'
 end
