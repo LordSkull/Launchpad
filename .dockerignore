@@ -1,0 +1,14 @@
+.git
+.gitignore
+.bundle
+log/*
+tmp/*
+!tmp/.keep
+db/*.sqlite3
+node_modules
+vendor/bundle
+*.gem
+.DS_Store
+Thumbs.db
+user_data/*
+!user_data/.gitkeep

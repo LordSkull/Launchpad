@@ -1,0 +1,20 @@
+services:
+  launchpad:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: launchpad-local
+    ports:
+      - "3000:3000"
+    environment:
+      RAILS_ENV: development
+      DATABASE_URL: sqlite3:/app/storage/development.sqlite3
+    volumes:
+      # User-installed songs remain visible on the host and survive container rebuilds.
+      - ./user_data:/app/user_data
+      # Rails' SQLite database survives container recreation.
+      - launchpad_db:/app/storage
+    restart: unless-stopped
+
+volumes:
+  launchpad_db:
