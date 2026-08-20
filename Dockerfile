@@ -24,8 +24,7 @@ COPY Gemfile Gemfile.lock ./
 
 # The lockfile was originally produced on Windows. Add Linux as a supported platform
 # inside the image without changing the host checkout.
-RUN bundle _1.17.3_ lock --add-platform x86_64-linux \
- && bundle _1.17.3_ config --local without production \
+RUN bundle _1.17.3_ config --local without production \
  && bundle _1.17.3_ config --local build.sqlite3 "--with-cflags=-Wno-error=incompatible-pointer-types" \
  && bundle _1.17.3_ config --local build.bcrypt "--with-cflags=-Wno-error=incompatible-pointer-types" \
  && bundle _1.17.3_ install
