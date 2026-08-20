@@ -1,4 +1,4 @@
-FROM ruby:2.7.8-bullseye
+FROM ruby:3.3.12-bookworm
 
 ENV LANG=C.UTF-8 \
     RAILS_ENV=development \
@@ -16,9 +16,8 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# Ruby 2.6 ships with an old Bundler; pin the version used by this revived app.
-RUN gem update --system 3.2.3 \
- && gem install bundler -v 2.4.22 --no-document
+# Keep Bundler pinned while upgrading the Ruby runtime.
+RUN gem install bundler -v 2.4.22 --no-document
 
 # Resolve/install dependencies before copying the rest of the source so Docker can cache this layer.
 COPY Gemfile Gemfile.lock ./
