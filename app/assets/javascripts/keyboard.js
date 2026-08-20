@@ -1,7 +1,6 @@
 var Keyboard_Space = new function(){
 
-    this.initKeyboard = function(testing){
-        testmode = testing;
+    this.initKeyboard = function(){
         return new Keyboard();
     }
     
@@ -16,19 +15,10 @@ var Keyboard_Space = new function(){
             this_obj.loadSounds(currentSongData["mappings"]["chain3"], currentSounds[2], 3);
             this_obj.loadSounds(currentSongData["mappings"]["chain4"], currentSounds[3], 4);
             
-            this_obj.backend = BackendSpace.init();
-            
             this_obj.keyboardUI = Keyboard_UI_Space.initKeyboardUI();
             
             console.log("New keyboard created");  
         })
-    }
-    
-    // link the keyboard and the editor
-    Keyboard.prototype.linkEditor = function(editor){
-        this.editor = editor;
-        var mainObj = this;
-        setTimeout(function(){mainObj.editor.setBPM(currentSongData.bpm)},500);
     }
     
     Keyboard.prototype.getCurrentSounds = function(){
@@ -147,9 +137,6 @@ var Keyboard_Space = new function(){
         var keyInd = this.getKeyInd(kc);
         if(currentSounds[currentSoundPack][keyInd] != null){
             this.midiKeyUp(kc);
-            
-            // send key code to MIDI editor
-            this.editor.recordKeyUp(kc);
         }
     }
     
@@ -183,9 +170,6 @@ var Keyboard_Space = new function(){
         var keyInd = this.getKeyInd(kc);
         if(currentSounds[currentSoundPack][keyInd] != null){
             this.midiKeyDown(kc);
-            
-            // send key code to midi editor
-            this.editor.recordKeyDown(kc);
         }
     }
     
@@ -225,17 +209,13 @@ var Keyboard_Space = new function(){
     
     // shows and formats all of the UI elements
     Keyboard.prototype.initUI = function(){
-        // create new editor and append it to the body element
-        if(testmode)
-            BasicMIDI.init("#editor_container_div", this, 170);
-        else
-            MIDI_Editor.init("#editor_container_div", this, 170);
-        
-        // info and links buttons
-        // $(".click_button").css("display", "inline-block");
-        
-        for(var s in songDatas)
-            $("#songs_container").append("<div class='song_selection' songInd='"+s+"'>"+songDatas[s].song_name+"</div>");
+        for(var s in songDatas){
+            var songSelection = $("<div></div>")
+                .addClass("song_selection")
+                .attr("songInd", s)
+                .text(songDatas[s].song_name);
+            $("#songs_container").append(songSelection);
+        }
         $("[songInd='"+currentSongInd+"']").css("background-color","rgb(220,220,220)");
         
         var mainObj = this; 
@@ -260,11 +240,6 @@ var Keyboard_Space = new function(){
                 currentSounds = [];
                 for(var i = 0; i < numChains; i++)
                     currentSounds.push([]);
-                    
-                mainObj.editor.notesLoaded([],-1);
-                
-                mainObj.editor.setBPM(currentSongData.bpm)
-                
                 numSoundsLoaded = 0;
                 Zip_Space.loadZip(currentSongData["filename"], function() {
                     mainObj.loadSounds(currentSongData["mappings"]["chain1"], currentSounds[0], 1);
@@ -275,21 +250,6 @@ var Keyboard_Space = new function(){
                 
             }
         });
-    }
-    
-    // send request to server to save the notes to the corresponding projectId (pid)
-    Keyboard.prototype.saveNotes = function(notes, pid){
-        var saveNote = [];
-        for(var n in notes)
-            saveNote.push({"note":notes[n].note, "beat":notes[n].beat, "length":notes[n].length});
-        //console.log(saveNote);
-        this.backend.saveSong(JSON.stringify(saveNote), pid, this.editor, currentSongData.song_number);
-    }
-    
-    // ask the user for the project they would like to load and then load that project from the server
-    // send back a notes array of the loaded project with note,beat,and length and the project id
-    Keyboard.prototype.loadNotes = function(){
-        this.backend.loadSongs(this.editor, currentSongData.song_number);
     }
     
     // current soundpack (0-3)
@@ -304,8 +264,6 @@ var Keyboard_Space = new function(){
     var currentSongData = equinoxData;
     // number of chains
     var numChains = 4;
-    
-    var testmode = false;
     
     var loadingSongs = true;
 

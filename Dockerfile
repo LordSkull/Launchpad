@@ -27,7 +27,6 @@ COPY Gemfile Gemfile.lock ./
 # inside the image without changing the host checkout.
 RUN bundle _2.4.22_ config --local without production \
  && bundle _2.4.22_ config --local build.sqlite3 "--with-cflags=-Wno-error=incompatible-pointer-types" \
- && bundle _2.4.22_ config --local build.bcrypt "--with-cflags=-Wno-error=incompatible-pointer-types" \
  && bundle _2.4.22_ install
 
 COPY . .

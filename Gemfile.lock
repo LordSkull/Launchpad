@@ -61,8 +61,6 @@ GEM
       tzinfo (~> 2.0)
       zeitwerk (~> 2.3)
     base64 (0.3.0)
-    bcrypt (3.1.11)
-    bcrypt (3.1.11-x64-mingw32)
     bindex (0.8.1)
     builder (3.3.0)
     byebug (10.0.2)
@@ -219,7 +217,6 @@ PLATFORMS
   x86_64-linux
 
 DEPENDENCIES
-  bcrypt (~> 3.1.7)
   byebug
   coffee-rails (~> 5.0)
   ffi (= 1.10.0)

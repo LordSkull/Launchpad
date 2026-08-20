@@ -7,7 +7,7 @@ var Keyboard_UI_Space = new function(){
     var KeyboardUI = function(){}
     
     KeyboardUI.prototype.initUI = function(){
-        // info, links, songs, and editor buttons
+        // info, links, and songs buttons
         $(".click_button").css("display", "inline-block");
         
         $(".click_button").click(function(){
@@ -113,7 +113,7 @@ var Keyboard_UI_Space = new function(){
                 keyboard.playKey(e.keyCode);
             }
             else{
-                if(!(e.ctrlKey || e.metaKey) && $("#login_form").css("display") != "block"){
+                if(!(e.ctrlKey || e.metaKey)){
                     // var keyInd = keyPairs.indexOf(e.keyCode);
                     // if(keyInd == -1)
                     //     keyInd = backupPairs.indexOf(e.keyCode);
@@ -135,7 +135,7 @@ var Keyboard_UI_Space = new function(){
                 keyboard.releaseKey(e.keyCode);
             }
             else{
-                if(!(e.ctrlKey || e.metaKey) && $("#login_form").css("display") != "block"){
+                if(!(e.ctrlKey || e.metaKey)){
                     // var keyInd = keyPairs.indexOf(e.keyCode);
                     // if(keyInd == -1)
                     //     keyInd = backupPairs.indexOf(e.keyCode);
