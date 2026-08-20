@@ -5,6 +5,12 @@ require 'fileutils'
 require Rails.root.join('script', 'song_store').to_s
 
 class UserSongStoreConfinementTest < ActiveSupport::TestCase
+  ManifestStub = Struct.new(:filename, :zip_path, :data, :song_number) do
+    def valid?
+      true
+    end
+  end
+
   def setup
     @temporary_root = Dir.mktmpdir('launchpad-song-store-confinement-')
     @repo_root = File.join(@temporary_root, 'repo')
@@ -16,7 +22,7 @@ class UserSongStoreConfinementTest < ActiveSupport::TestCase
     FileUtils.remove_entry(@temporary_root) if @temporary_root && File.exist?(@temporary_root)
   end
 
-  test 'remove currently unlinks a terminal song directory symlink without deleting its target' do
+  test 'remove unlinks a terminal song directory symlink without deleting its target' do
     store = UserSongStore.new(@repo_root)
     outside_song = File.join(@outside_root, 'evil_target')
     marker_path = write_marker(outside_song)
@@ -32,7 +38,7 @@ class UserSongStoreConfinementTest < ActiveSupport::TestCase
     assert_equal 'outside marker', File.read(marker_path, encoding: 'UTF-8')
   end
 
-  test 'a parent songs root symlink currently lets zip path and remove operate outside the lexical root' do
+  test 'a parent songs root symlink is rejected at initialization and by every store operation' do
     outside_songs = File.join(@outside_root, 'outside_songs')
     outside_song = File.join(outside_songs, 'test_song')
     outside_zip = File.join(outside_song, 'sounds.zip')
@@ -44,21 +50,39 @@ class UserSongStoreConfinementTest < ActiveSupport::TestCase
     songs_link = File.join(user_data, 'songs')
     File.symlink(outside_songs, songs_link)
 
-    store = UserSongStore.new(@repo_root)
-    returned_zip = store.zip_path('test_song')
+    initialization_error = assert_raises(RuntimeError) { UserSongStore.new(@repo_root) }
 
     assert File.symlink?(songs_link)
-    assert_equal File.join(songs_link, 'test_song', 'sounds.zip'), returned_zip
-    assert_equal File.realpath(outside_zip), File.realpath(returned_zip)
+    assert_match(/Unsafe song storage path/, initialization_error.message)
     assert File.file?(marker_path)
-    assert_equal true, store.remove!('test_song')
 
-    refute File.exist?(outside_song)
+    File.unlink(songs_link)
+    FileUtils.mkdir_p(songs_link)
+    store = UserSongStore.new(@repo_root)
+    Dir.rmdir(songs_link)
+    File.symlink(outside_songs, songs_link)
+
+    operations = {
+      zip_path: -> { store.zip_path('test_song') },
+      remove: -> { store.remove!('test_song') },
+      list: -> { store.list },
+      installed: -> { store.installed?('test_song') },
+      install: -> { store.install!(build_install_manifest) }
+    }
+
+    operations.each do |name, operation|
+      error = assert_raises(RuntimeError, "Expected #{name} to reject the root symlink", &operation)
+      assert_match(/Unsafe song storage path/, error.message)
+      assert File.directory?(outside_song)
+      assert_equal 'outside marker', File.read(marker_path, encoding: 'UTF-8')
+      assert_equal 'outside zip', File.read(outside_zip, encoding: 'UTF-8')
+    end
+
     assert File.directory?(outside_songs)
     assert File.symlink?(songs_link)
   end
 
-  test 'zip path currently accepts a symlink to a file outside the song directory' do
+  test 'zip path rejects both a symlink file and a symlink song directory' do
     store = UserSongStore.new(@repo_root)
     song_dir = File.join(store.songs_root, 'test_song')
     FileUtils.mkdir_p(song_dir)
@@ -67,51 +91,59 @@ class UserSongStoreConfinementTest < ActiveSupport::TestCase
     zip_link = File.join(song_dir, 'sounds.zip')
     File.symlink(outside_zip, zip_link)
 
-    returned_zip = store.zip_path('test_song')
+    zip_error = assert_raises(RuntimeError) { store.zip_path('test_song') }
 
     assert File.symlink?(zip_link)
-    assert File.file?(zip_link)
-    assert_equal zip_link, returned_zip
-    assert_equal File.realpath(outside_zip), File.realpath(returned_zip)
-    assert_equal 'external zip', File.read(returned_zip, encoding: 'UTF-8')
+    assert_match(/Unsafe song storage path/, zip_error.message)
+    assert_equal 'external zip', File.read(outside_zip, encoding: 'UTF-8')
+
+    outside_song = File.join(@outside_root, 'linked_song_target')
+    write_song(outside_song, song_name: 'Linked Song', include_zip: true)
+    song_link = File.join(store.songs_root, 'linked_song')
+    File.symlink(outside_song, song_link)
+
+    song_error = assert_raises(RuntimeError) { store.zip_path('linked_song') }
+
+    assert File.symlink?(song_link)
+    assert_match(/Unsafe song storage path/, song_error.message)
+    assert File.file?(File.join(outside_song, 'sounds.zip'))
   end
 
-  test 'installed currently accepts normal directories and directories reached through symlinks' do
+  test 'normal songs remain available while installed rejects a terminal directory symlink' do
     store = UserSongStore.new(@repo_root)
-    FileUtils.mkdir_p(File.join(store.songs_root, 'normal_song'))
+    normal_song = File.join(store.songs_root, 'normal_song')
+    write_song(normal_song, song_name: 'Normal Song', include_zip: true)
 
     outside_song = File.join(@outside_root, 'terminal_target')
     FileUtils.mkdir_p(outside_song)
     File.symlink(outside_song, File.join(store.songs_root, 'linked_song'))
 
     assert store.installed?('normal_song')
-    assert store.installed?('linked_song')
-
-    parent_repo = File.join(@temporary_root, 'parent_repo')
-    parent_user_data = File.join(parent_repo, 'user_data')
-    parent_target = File.join(@outside_root, 'parent_target')
-    FileUtils.mkdir_p([parent_user_data, File.join(parent_target, 'parent_song')])
-    File.symlink(parent_target, File.join(parent_user_data, 'songs'))
-    parent_store = UserSongStore.new(parent_repo)
-
-    assert parent_store.installed?('parent_song')
-    refute parent_store.installed?('missing_song')
+    refute store.installed?('linked_song')
+    refute store.installed?('missing_song')
+    assert_equal File.join(normal_song, 'sounds.zip'), store.zip_path('normal_song')
+    assert_equal ['Normal Song'], store.list.map { |song| song['song_name'] }
   end
 
-  test 'list currently reads a manifest through a terminal song directory symlink' do
+  test 'list skips a symlink song directory and a symlink manifest without reading external data' do
     store = UserSongStore.new(@repo_root)
     outside_song = File.join(@outside_root, 'linked_target')
     write_song(outside_song, song_name: 'Linked Song', include_zip: true)
     song_link = File.join(store.songs_root, 'linked_song')
     File.symlink(outside_song, song_link)
 
+    outside_manifest = File.join(@outside_root, 'external_manifest.json')
+    File.write(outside_manifest, JSON.generate('song_name' => 'External Manifest'), mode: 'w', encoding: 'UTF-8')
+    manifest_link_song = File.join(store.songs_root, 'manifest_link_song')
+    FileUtils.mkdir_p(manifest_link_song)
+    File.symlink(outside_manifest, File.join(manifest_link_song, 'song.json'))
+
     songs = store.list
 
     assert File.symlink?(song_link)
-    assert_equal 1, songs.length
-    assert_equal 'Linked Song', songs.first['song_name']
-    assert_equal 'linked_song', songs.first['filename']
-    assert_equal true, songs.first['user_installed']
+    assert File.symlink?(File.join(manifest_link_song, 'song.json'))
+    assert_empty songs
+    assert_equal({ 'song_name' => 'External Manifest' }, JSON.parse(File.read(outside_manifest, encoding: 'UTF-8')))
     assert File.file?(File.join(outside_song, 'sounds.zip'))
   end
 
@@ -195,5 +227,16 @@ class UserSongStoreConfinementTest < ActiveSupport::TestCase
     }
     File.write(File.join(directory, 'song.json'), JSON.generate(manifest), mode: 'w', encoding: 'UTF-8')
     File.write(File.join(directory, 'sounds.zip'), 'zip marker', mode: 'w', encoding: 'UTF-8') if include_zip
+  end
+
+  def build_install_manifest
+    zip_path = File.join(@outside_root, 'install-input.zip')
+    File.write(zip_path, 'install zip', mode: 'w', encoding: 'UTF-8')
+    ManifestStub.new(
+      'new_song',
+      zip_path,
+      { 'song_name' => 'New Song', 'filename' => 'new_song' },
+      100
+    )
   end
 end

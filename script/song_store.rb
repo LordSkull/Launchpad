@@ -10,15 +10,19 @@ class UserSongStore
     @repo_root = File.expand_path(repo_root)
     @songs_root = File.join(@repo_root, 'user_data', 'songs')
     FileUtils.mkdir_p(@songs_root)
+    ensure_safe_root!
   end
 
   def list
-    return [] unless Dir.exist?(songs_root)
+    real_root = ensure_safe_root!
 
     Dir.entries(songs_root).sort.each_with_object([]) do |entry, songs|
       next if entry == '.' || entry == '..' || entry.start_with?('.')
-      manifest_path = File.join(songs_root, entry, 'song.json')
-      next unless File.file?(manifest_path)
+      song_dir = File.join(songs_root, entry)
+      next unless safe_real_path?(song_dir, real_root, :directory)
+
+      manifest_path = File.join(song_dir, 'song.json')
+      next unless safe_real_path?(manifest_path, real_root, :file)
 
       begin
         data = JSON.parse(File.read(manifest_path, encoding: 'UTF-8'))
@@ -34,9 +38,10 @@ class UserSongStore
   def install!(manifest, allow_public_zip_conflict = false)
     raise 'Song package must be valid before installation.' unless manifest.valid?
 
+    ensure_safe_root!
     filename = normalize_filename(manifest.filename)
     target_dir = File.join(songs_root, filename)
-    raise "Song '#{filename}' is already installed." if File.exist?(target_dir)
+    raise "Song '#{filename}' is already installed." if path_entry_exists?(target_dir)
 
     public_zip = File.join(repo_root, 'public', 'zip', 'sounds', "#{filename}.zip")
     if File.exist?(public_zip) && !allow_public_zip_conflict
@@ -59,8 +64,16 @@ class UserSongStore
     FileUtils.mkdir_p(tmp_dir)
 
     begin
+      real_root = ensure_safe_root!
+      raise 'Unsafe song storage path.' unless safe_real_path?(tmp_dir, real_root, :directory)
+
       File.write(File.join(tmp_dir, 'song.json'), JSON.pretty_generate(data) + "\n", mode: 'w', encoding: 'UTF-8')
       FileUtils.cp(manifest.zip_path, File.join(tmp_dir, 'sounds.zip'))
+
+      real_root = ensure_safe_root!
+      raise 'Unsafe song storage path.' unless safe_real_path?(tmp_dir, real_root, :directory)
+      raise "Song '#{filename}' is already installed." if path_entry_exists?(target_dir)
+
       FileUtils.mv(tmp_dir, target_dir)
     rescue StandardError
       FileUtils.rm_rf(tmp_dir)
@@ -76,23 +89,52 @@ class UserSongStore
   end
 
   def remove!(filename)
+    real_root = ensure_safe_root!
     filename = normalize_filename(filename)
     target_dir = File.join(songs_root, filename)
-    raise "User song '#{filename}' is not installed." unless File.directory?(target_dir)
+    target_stat = lstat(target_dir)
+    raise "User song '#{filename}' is not installed." unless target_stat
 
+    if target_stat.symlink?
+      File.unlink(target_dir)
+      return true
+    end
+
+    unless target_stat.directory? && safe_real_path?(target_dir, real_root, :directory)
+      raise "User song '#{filename}' is not installed."
+    end
+
+    ensure_safe_root!
     FileUtils.rm_rf(target_dir)
     true
   end
 
   def zip_path(filename)
+    real_root = ensure_safe_root!
     filename = normalize_filename(filename)
-    path = File.join(songs_root, filename, 'sounds.zip')
-    raise "User song '#{filename}' was not found." unless File.file?(path)
-    path
+    song_dir = File.join(songs_root, filename)
+    song_stat = lstat(song_dir)
+    raise "User song '#{filename}' was not found." unless song_stat
+    raise 'Unsafe song storage path.' if song_stat.symlink?
+    unless song_stat.directory? && safe_real_path?(song_dir, real_root, :directory)
+      raise "User song '#{filename}' was not found."
+    end
+
+    zip = File.join(song_dir, 'sounds.zip')
+    zip_stat = lstat(zip)
+    raise "User song '#{filename}' was not found." unless zip_stat
+    raise 'Unsafe song storage path.' if zip_stat.symlink?
+    unless zip_stat.file? && safe_real_path?(zip, real_root, :file)
+      raise "User song '#{filename}' was not found."
+    end
+
+    zip
   end
 
   def installed?(filename)
-    File.directory?(File.join(songs_root, normalize_filename(filename)))
+    real_root = ensure_safe_root!
+    song_dir = File.join(songs_root, normalize_filename(filename))
+    safe_real_path?(song_dir, real_root, :directory)
   end
 
   def existing_song_numbers
@@ -104,6 +146,41 @@ class UserSongStore
   end
 
   private
+
+  def ensure_safe_root!
+    root_stat = File.lstat(songs_root)
+    real_root = File.realpath(songs_root)
+    expected_root = File.expand_path(songs_root)
+
+    unless root_stat.directory? && !root_stat.symlink? && real_root == expected_root
+      raise 'Unsafe song storage path.'
+    end
+
+    real_root
+  rescue SystemCallError
+    raise 'Unsafe song storage path.'
+  end
+
+  def safe_real_path?(path, real_root, type)
+    path_stat = File.lstat(path)
+    return false if path_stat.symlink?
+    return false if type == :directory && !path_stat.directory?
+    return false if type == :file && !path_stat.file?
+
+    File.realpath(path).start_with?(real_root + File::SEPARATOR)
+  rescue SystemCallError
+    false
+  end
+
+  def path_entry_exists?(path)
+    !lstat(path).nil?
+  end
+
+  def lstat(path)
+    File.lstat(path)
+  rescue Errno::ENOENT, Errno::ENOTDIR
+    nil
+  end
 
   def normalize_filename(value)
     filename = value.to_s.strip
