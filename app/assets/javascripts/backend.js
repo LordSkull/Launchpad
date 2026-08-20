@@ -7,31 +7,7 @@ var BackendSpace = new function(){
   var BackendComm = function(){
     $("#close_layover").click(function(){
       $("#gray_background").css("display","none");
-      $("#login_form").css("display","none");
       $("#load_songs").css("display","none");
-    });
-    
-    $("#submit_login").click(function() {
-      $.ajax({
-        type: "POST",
-        url: "/login",
-        data: {username: $("#login_username").val(), password: $("#login_password").val()},
-        success: function(data, textStatus, jqXHR) {
-          console.log(data);
-          // console.log(textStatus);
-          // console.log(jqXHR);
-          if(data.message == "success"){
-            $("#login_form").css("display", "none");
-            $("#gray_background").css("display", "none");
-          }
-          else
-            alert("There was an error");
-        },
-        error: function(jqXHR, textStatus, errorThrown) {
-            console.log("Error=" + errorThrown);
-            alert("There was an error");
-        }
-      });
     });
   }
   
@@ -56,7 +32,6 @@ var BackendSpace = new function(){
           else if(data.data == "nil"){
             alert("You must be logged in");
             $("#gray_background").css("display","block");
-            $("#login_form").css("display", "block");
           }
           else{
             alert("Song successfully saved");

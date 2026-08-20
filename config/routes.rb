@@ -3,9 +3,6 @@ Rails.application.routes.draw do
   
   post "/get_asset_path" => "application#getAssetUrl"
   
-  post "/login" => "application#login"
-  get "/logout" => "application#logout"
-  
   #song
   post "/view_all_songs" => "song#view_all"
   

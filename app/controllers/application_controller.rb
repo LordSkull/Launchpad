@@ -8,23 +8,7 @@ class ApplicationController < ActionController::Base
   end
   
   def index
-    # session[:user_id] = nil
     render "index"
-  end
-  
-  def logout
-    session[:user_id] = nil
-    redirect_to "/"
-  end
-  
-  def login
-    @user = User.find_by(username: params[:username])
-    if @user and @user.authenticate(params[:password])
-      session[:user_id] = @user.id
-      render :json => {"message" => "success"}
-    else
-      render :json => {"message" => "failed"}
-    end
   end
   
   def google13ecc4458e525973

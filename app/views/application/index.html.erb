@@ -1,9 +1,5 @@
 <h1>Online Launchpad</h1>
 
-<% if session[:user_id] != nil %>
-<div id="signout_button"><a href="logout">Sign Out</a></div>
-<% end %>
-
 <div id="video_link" class="link">Watch the video: <a href="https://www.youtube.com/watch?v=TFHcqJc0xa8" target="_blank">Online Launchpad - First of the Year (Equinox)</a></div>
 <div id="video_link" class="link">Watch the tutorial: <a href="https://www.youtube.com/watch?v=tAjIG_cl7ss" target="_blank">Online Launchpad Tutorial</a></div>
 
@@ -100,18 +96,6 @@
 
 <div id="gray_background">
   <div id="close_layover">Close</div>
-</div>
-
-<div id="login_form">
-  <div>
-    <label>Username</label>
-    <input type="text" name="username" id="login_username"/>
-  </div>
-  <div>
-    <label>Password</label>
-    <input type="password" name="password" id="login_password"/>
-  </div>
-  <div id="submit_login">Login</div>
 </div>
 
 <div id="load_songs"></div>

@@ -19,4 +19,16 @@ class ApplicationSecurityCharacterizationTest < ActionDispatch::IntegrationTest
       end
     end
   end
+
+  def test_legacy_login_route_is_not_available
+    assert_raises(ActionController::RoutingError) do
+      post '/login'
+    end
+  end
+
+  def test_legacy_logout_route_is_not_available
+    assert_raises(ActionController::RoutingError) do
+      get '/logout'
+    end
+  end
 end
