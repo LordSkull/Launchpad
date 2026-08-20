@@ -10,14 +10,6 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_08_20_154921) do
-
-  create_table "songs", force: :cascade do |t|
-    t.text "song_data"
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.string "name"
-    t.integer "song_number"
-  end
+ActiveRecord::Schema.define(version: 2026_08_20_162522) do
 
 end
