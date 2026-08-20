@@ -1,0 +1,12 @@
+# Shell scripts executed inside Linux containers must always use LF.
+*.sh text eol=lf
+
+# Rails executable scripts also have Unix shebangs.
+bin/* text eol=lf
+
+# Keep Windows launchers in Windows format.
+*.bat text eol=crlf
+
+# Normal text/code files.
+*.rb text eol=lf
+Dockerfile text eol=lf

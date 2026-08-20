@@ -3,12 +3,12 @@ source 'https://rubygems.org'
 # ruby version
 ruby "2.7.8"
 # Bundle edge Rails instead: gem 'rails', github: 'rails/rails'
-gem 'rails', '5.2.8.1'
+gem 'rails', '6.0.6.1'
 gem 'nokogiri', '1.13.10'
 gem 'ffi', '1.10.0'
 #testing
 group :development do
-  gem 'sqlite3', '1.3.13'
+  gem 'sqlite3', '1.4.2'
 end
 
 gem 'tzinfo-data', platforms: [:mingw, :mswin, :x64_mingw]
@@ -19,11 +19,11 @@ group :production do
   gem 'rails_12factor'
 end
 # Use SCSS for stylesheets
-gem 'sass-rails', '~> 5.0'
+gem 'sass-rails', '~> 6.0'
 # Use Uglifier as compressor for JavaScript assets
 gem 'uglifier', '>= 1.3.0'
 # Use CoffeeScript for .coffee assets and views
-gem 'coffee-rails', '~> 4.2.2'
+gem 'coffee-rails', '~> 5.0'
 # See https://github.com/rails/execjs#readme for more supported runtimes
 # gem 'therubyracer', platforms: :ruby
 
