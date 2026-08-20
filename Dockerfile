@@ -1,4 +1,4 @@
-FROM ruby:2.6.10-bullseye
+FROM ruby:2.7.8-bullseye
 
 ENV LANG=C.UTF-8 \
     RAILS_ENV=development \
