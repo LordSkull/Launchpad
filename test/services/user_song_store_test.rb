@@ -72,6 +72,81 @@ class UserSongStoreTest < ActiveSupport::TestCase
     end
   end
 
+  test 'list preserves valid manifest fields and derives client fields from the directory' do
+    Dir.mktmpdir do |root|
+      store = UserSongStore.new(root)
+      manifest = {
+        'song_name' => 'Listed Song',
+        'filename' => '../untrusted_manifest_value',
+        'bpm' => '120.5',
+        'song_number' => '007',
+        'schema_version' => 'legacy',
+        'unknown_key' => { 'keep' => true },
+        'user_installed' => false
+      }
+      write_store_entry(store, 'actual_directory', JSON.generate(manifest))
+
+      songs = store.list
+
+      expected = manifest.merge(
+        'filename' => 'actual_directory',
+        'user_installed' => true
+      )
+      assert_equal [expected], songs
+    end
+  end
+
+  test 'list skips every supported non object top level JSON value' do
+    Dir.mktmpdir do |root|
+      store = UserSongStore.new(root)
+      {
+        'array_value' => '[]',
+        'string_value' => '"hello"',
+        'number_value' => '123',
+        'boolean_value' => 'true',
+        'null_value' => 'null'
+      }.each do |entry, json|
+        write_store_entry(store, entry, json)
+      end
+      write_store_entry(store, 'valid_object', JSON.generate('song_name' => 'Valid Object'))
+
+      songs = store.list
+
+      assert_equal ['valid_object'], songs.map { |song| song['filename'] }
+      assert_equal ['Valid Object'], songs.map { |song| song['song_name'] }
+    end
+  end
+
+  test 'list keeps valid entries around a corrupt entry in directory order' do
+    Dir.mktmpdir do |root|
+      store = UserSongStore.new(root)
+      write_store_entry(store, 'a_valid', JSON.generate('song_name' => 'First'))
+      write_store_entry(store, 'b_broken', '[]')
+      write_store_entry(store, 'c_valid', JSON.generate('song_name' => 'Third'))
+
+      songs = store.list
+
+      assert_equal %w[a_valid c_valid], songs.map { |song| song['filename'] }
+      assert_equal ['First', 'Third'], songs.map { |song| song['song_name'] }
+    end
+  end
+
+  test 'list skips missing invalid and incomplete song entries' do
+    Dir.mktmpdir do |root|
+      store = UserSongStore.new(root)
+      FileUtils.mkdir_p(File.join(store.songs_root, 'missing_manifest'))
+      write_store_entry(store, 'invalid_manifest', '{invalid')
+      write_store_entry(store, 'missing_zip', JSON.generate('song_name' => 'No ZIP'), include_zip: false)
+      write_store_entry(store, 'complete_song', JSON.generate('song_name' => 'Complete'))
+
+      songs = store.list
+
+      assert_equal ['complete_song'], songs.map { |song| song['filename'] }
+      assert_equal ['Complete'], songs.map { |song| song['song_name'] }
+      refute File.exist?(File.join(store.songs_root, 'missing_zip', 'sounds.zip'))
+    end
+  end
+
   private
 
   def valid_manifest_hash
@@ -111,5 +186,12 @@ class UserSongStoreTest < ActiveSupport::TestCase
     marker_path = File.join(outside_dir, 'marker.txt')
     File.write(marker_path, 'outside marker', mode: 'w', encoding: 'UTF-8')
     marker_path
+  end
+
+  def write_store_entry(store, entry, json, include_zip: true)
+    song_dir = File.join(store.songs_root, entry)
+    FileUtils.mkdir_p(song_dir)
+    File.write(File.join(song_dir, 'song.json'), json, mode: 'w', encoding: 'UTF-8')
+    File.write(File.join(song_dir, 'sounds.zip'), 'zip marker', mode: 'w', encoding: 'UTF-8') if include_zip
   end
 end

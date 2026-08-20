@@ -138,51 +138,21 @@ class UserSongStoreConfinementTest < ActiveSupport::TestCase
     FileUtils.mkdir_p(manifest_link_song)
     File.symlink(outside_manifest, File.join(manifest_link_song, 'song.json'))
 
+    outside_zip = File.join(@outside_root, 'external-list.zip')
+    File.write(outside_zip, 'external list zip', mode: 'w', encoding: 'UTF-8')
+    zip_link_song = File.join(store.songs_root, 'zip_link_song')
+    write_song(zip_link_song, song_name: 'ZIP Link Song', include_zip: false)
+    File.symlink(outside_zip, File.join(zip_link_song, 'sounds.zip'))
+
     songs = store.list
 
     assert File.symlink?(song_link)
     assert File.symlink?(File.join(manifest_link_song, 'song.json'))
+    assert File.symlink?(File.join(zip_link_song, 'sounds.zip'))
     assert_empty songs
     assert_equal({ 'song_name' => 'External Manifest' }, JSON.parse(File.read(outside_manifest, encoding: 'UTF-8')))
     assert File.file?(File.join(outside_song, 'sounds.zip'))
-  end
-
-  test 'list skips missing and invalid manifests but includes a valid manifest without a zip' do
-    store = UserSongStore.new(@repo_root)
-    FileUtils.mkdir_p(File.join(store.songs_root, 'missing_manifest'))
-
-    invalid_dir = File.join(store.songs_root, 'invalid_manifest')
-    FileUtils.mkdir_p(invalid_dir)
-    File.write(File.join(invalid_dir, 'song.json'), '{invalid', mode: 'w', encoding: 'UTF-8')
-
-    no_zip_dir = File.join(store.songs_root, 'valid_without_zip')
-    write_song(no_zip_dir, song_name: 'No ZIP', include_zip: false)
-
-    songs = store.list
-
-    assert_equal 1, songs.length
-    assert_equal 'No ZIP', songs.first['song_name']
-    assert_equal 'valid_without_zip', songs.first['filename']
-    assert_equal true, songs.first['user_installed']
-    refute File.exist?(File.join(no_zip_dir, 'sounds.zip'))
-  end
-
-  test 'list currently skips a JSON string rejected by the legacy parser' do
-    store = UserSongStore.new(@repo_root)
-    scalar_dir = File.join(store.songs_root, 'scalar_manifest')
-    FileUtils.mkdir_p(scalar_dir)
-    File.write(File.join(scalar_dir, 'song.json'), '"hello"', mode: 'w', encoding: 'UTF-8')
-
-    assert_equal [], store.list
-  end
-
-  test 'list currently fails entirely when a manifest contains a JSON array' do
-    store = UserSongStore.new(@repo_root)
-    array_dir = File.join(store.songs_root, 'array_manifest')
-    FileUtils.mkdir_p(array_dir)
-    File.write(File.join(array_dir, 'song.json'), '[]', mode: 'w', encoding: 'UTF-8')
-
-    assert_raises(TypeError) { store.list }
+    assert_equal 'external list zip', File.read(outside_zip, encoding: 'UTF-8')
   end
 
   test 'zip path rejects missing songs missing zip files and directories named sounds zip' do

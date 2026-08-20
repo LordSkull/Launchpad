@@ -24,12 +24,18 @@ class UserSongStore
       manifest_path = File.join(song_dir, 'song.json')
       next unless safe_real_path?(manifest_path, real_root, :file)
 
+      zip_path = File.join(song_dir, 'sounds.zip')
+      next unless safe_real_path?(zip_path, real_root, :file)
+
       begin
         data = JSON.parse(File.read(manifest_path, encoding: 'UTF-8'))
+        next unless data.is_a?(Hash)
+
         data['filename'] = entry
         data['user_installed'] = true
         songs << data
-      rescue JSON::ParserError, Encoding::InvalidByteSequenceError => e
+      rescue JSON::ParserError, Encoding::InvalidByteSequenceError,
+             Encoding::UndefinedConversionError, SystemCallError => e
         warn "Skipping invalid user song #{entry}: #{e.message}"
       end
     end
