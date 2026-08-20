@@ -341,10 +341,10 @@ Controlla in particolare:
 La baseline attuale utilizza:
 
 ```text
-Ruby        2.6.10
-Rails       4.2.10
+Ruby        2.7.8
+Rails       6.1.7.10
 Bundler     2.4.22
-SQLite
+SQLite      1.4.2
 JavaScript
 Howler.js
 Zip.js
