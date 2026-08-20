@@ -8,7 +8,8 @@ services:
       - "127.0.0.1:3000:3000"
     environment:
       RAILS_ENV: development
-      DATABASE_URL: sqlite3:/app/storage/development.sqlite3
+      DATABASE_PATH: /app/storage/development.sqlite3
+      TEST_DATABASE_PATH: /app/storage/test.sqlite3
       DISABLE_SPRING: "1"
     volumes:
       # User-installed songs remain visible on the host and survive container rebuilds.
