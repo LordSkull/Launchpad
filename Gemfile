@@ -1,11 +1,14 @@
 source 'https://rubygems.org'
 
 # ruby version
-ruby "2.7.8"
+ruby '3.3.12'
+
 # Bundle edge Rails instead: gem 'rails', github: 'rails/rails'
 gem 'rails', '7.1.6'
 gem 'sprockets-rails', '3.5.2'
 gem 'nokogiri', '1.15.7'
+
+gem "puma", ">= 5.0"
 
 #testing
 group :development do
@@ -43,9 +46,7 @@ gem 'jbuilder', '~> 2.0'
 # gem 'capistrano-rails', group: :development
 
 group :development, :test do
-  # Call 'byebug' anywhere in the code to stop execution and get a debugger console
-  gem 'byebug'
-
+  
   # Spring speeds up development by keeping your application running in the background. Read more: https://github.com/rails/spring
   gem 'spring', '3.1.1'
 end
