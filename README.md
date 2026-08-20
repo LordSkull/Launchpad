@@ -4,23 +4,29 @@ Una versione modernizzata e più semplice da usare del progetto originale **Dan1
 
 Launchpad è un'applicazione web che simula un controller Launchpad direttamente nel browser: puoi suonare sample con tastiera e mouse, cambiare sound pack, aggiungere nuove canzoni e gestire quelle installate senza modificare manualmente il codice.
 
-> Stato del progetto: questa fork parte da una codebase legacy basata su Ruby on Rails 4.2 e Ruby 2.6. L'obiettivo è mantenere il progetto funzionante mentre viene modernizzato progressivamente.
+> **Stato del progetto:** questa fork nasce da una codebase legacy basata originariamente su Ruby on Rails 4.2.  
+> Il progetto è stato progressivamente modernizzato ed è attualmente basato su **Ruby 3.3.12** e **Rails 7.1.6**.
+>
+> La modernizzazione è ancora in corso, con particolare attenzione a sicurezza, semplificazione dell'architettura e rimozione delle dipendenze legacy residue.
 
 ---
 
 ## Funzionalità
 
-- Launchpad virtuale utilizzabile da browser
-- Controllo tramite tastiera
+- Launchpad virtuale utilizzabile direttamente dal browser
+- Controllo tramite tastiera e mouse
 - Riproduzione audio tramite Howler.js
 - Supporto a 4 chain da 48 pad ciascuna
-- Aggiunta di nuove canzoni tramite interfaccia web
-- Validazione automatica dei sound pack
+- Sound pack built-in
+- Aggiunta di nuove canzoni tramite Song Builder
+- Validazione automatica dei manifest e dei sound pack
 - Installazione delle canzoni senza modificare `keyboard.js`
 - Gestione delle canzoni installate
-- Rimozione delle canzoni dalla pagina **Manage Songs**
+- Rimozione delle user song tramite **Manage Songs**
 - Persistenza delle canzoni utente in `user_data/`
-- Avvio semplificato tramite Docker
+- Ambiente Docker riproducibile
+- Launcher Windows per avvio, stop e visualizzazione log
+- Suite automatica di test Rails
 
 ---
 
@@ -28,13 +34,13 @@ Launchpad è un'applicazione web che simula un controller Launchpad direttamente
 
 ## Requisito
 
-Per utilizzare Launchpad non è necessario installare Ruby, Rails, Bundler, SQLite o altre dipendenze manualmente.
+Per utilizzare Launchpad non è necessario installare manualmente Ruby, Rails, Bundler, SQLite o altre dipendenze.
 
 Serve solamente:
 
 **Docker Desktop**
 
-Scaricalo e installalo dal sito ufficiale Docker:
+Puoi scaricarlo dal sito ufficiale:
 
 https://www.docker.com/products/docker-desktop/
 
@@ -46,7 +52,7 @@ Dopo l'installazione, avvia Docker Desktop e attendi che Docker sia pronto.
 
 Scarica o clona questa repository.
 
-Se usi Git:
+Con Git:
 
 ```powershell
 git clone https://github.com/LordSkull/Launchpad.git
@@ -61,10 +67,10 @@ START_LAUNCHPAD.bat
 
 Il launcher:
 
-1. verifica che Docker sia installato;
-2. avvia l'ambiente Launchpad;
-3. prepara automaticamente il database al primo avvio;
-4. avvia Rails;
+1. verifica che Docker sia disponibile;
+2. avvia o ricostruisce l'ambiente Launchpad se necessario;
+3. prepara l'ambiente Rails locale;
+4. avvia il server web;
 5. apre il browser su:
 
 ```text
@@ -75,7 +81,7 @@ http://localhost:3000
 
 Il primo avvio può richiedere alcuni minuti perché Docker deve scaricare l'immagine Ruby e installare le dipendenze del progetto.
 
-Gli avvii successivi sono molto più rapidi.
+Gli avvii successivi sono normalmente molto più rapidi.
 
 ---
 
@@ -87,7 +93,7 @@ Fai doppio clic su:
 STOP_LAUNCHPAD.bat
 ```
 
-Le canzoni aggiunte dall'utente e il database locale vengono mantenuti.
+Le canzoni aggiunte dall'utente vengono mantenute.
 
 ---
 
@@ -131,7 +137,7 @@ Dalla pagina principale premi:
 + Add Song
 ```
 
-Si aprirà il Song Builder.
+Si aprirà il **Song Builder**.
 
 Il builder permette di:
 
@@ -144,13 +150,13 @@ Il builder permette di:
 - validare il pacchetto;
 - installare direttamente la canzone.
 
-Non è necessario modificare JavaScript manualmente.
+Non è necessario modificare manualmente JavaScript o altri file del progetto.
 
 ---
 
 ## Struttura dello ZIP
 
-Il sound pack deve avere questa struttura:
+Il sound pack utilizza una struttura come questa:
 
 ```text
 sounds/
@@ -174,17 +180,17 @@ Il Song Builder permette poi di associare ogni file al pad desiderato.
 
 ## Sample e project file
 
-Per ottenere risultati migliori è consigliato partire da:
+Per ottenere risultati migliori è consigliato partire da materiale già preparato, ad esempio:
 
-- Launchpad project file già esistenti;
+- Launchpad project file;
 - sample pack;
-- stem già tagliati;
+- stem;
 - loop;
 - vocal chop;
 - effetti;
 - one-shot.
 
-Separare automaticamente una canzone completa in voce, batteria e basso può essere utile come punto di partenza, ma normalmente è comunque necessario scegliere e tagliare manualmente le parti musicalmente interessanti.
+La separazione automatica di una canzone completa in voce, batteria, basso e altri stem può essere utile come punto di partenza, ma normalmente è comunque necessario scegliere e tagliare manualmente le parti musicalmente interessanti.
 
 ---
 
@@ -196,17 +202,17 @@ Dalla home premi:
 Manage Songs
 ```
 
-La pagina distingue tra:
+La pagina distingue tra due categorie.
 
 ### Built-in songs
 
-Canzoni incluse nel progetto.
+Sono le canzoni incluse direttamente nel progetto.
 
 Non vengono rimosse dalla normale interfaccia.
 
 ### Your songs
 
-Canzoni installate dall'utente.
+Sono le canzoni installate dall'utente.
 
 Per rimuoverne una premi:
 
@@ -216,7 +222,7 @@ Remove
 
 e conferma l'operazione.
 
-La configurazione e il relativo sound pack verranno eliminati automaticamente.
+La configurazione e il relativo sound pack vengono eliminati dal relativo spazio utente.
 
 ---
 
@@ -239,8 +245,47 @@ Questo significa che:
 
 - installare una canzone non modifica `keyboard.js`;
 - rimuovere una canzone non modifica il sorgente;
-- ricostruire il container Docker non cancella le canzoni;
-- aggiornare l'applicazione è più semplice.
+- ricostruire il container Docker non cancella normalmente le user song;
+- aggiornare l'applicazione è più semplice;
+- le song installate possono essere gestite senza modificare la repository.
+
+---
+
+# Architettura delle canzoni
+
+Launchpad gestisce attualmente due tipi principali di canzoni.
+
+```text
+Built-in songs
+    ↓
+metadata JavaScript
+    ↓
+ZIP statici
+    ↓
+browser
+
+User songs
+    ↓
+Song Builder
+    ↓
+manifest + ZIP
+    ↓
+LocalSongsController
+    ↓
+SongManifest
+    ↓
+ZipEntries
+    ↓
+UserSongStore
+    ↓
+user_data/songs
+    ↓
+browser
+```
+
+Il vecchio sistema basato sul model ActiveRecord `Song` è stato rimosso.
+
+Le user song moderne non dipendono dal database Rails.
 
 ---
 
@@ -258,9 +303,9 @@ poi riavvia Launchpad con:
 START_LAUNCHPAD.bat
 ```
 
-Docker ricostruirà automaticamente l'immagine se necessario.
+Docker ricostruirà automaticamente l'ambiente quando necessario.
 
-I dati presenti in `user_data/` non vengono cancellati.
+I dati presenti in `user_data/` rimangono separati dal codice del progetto.
 
 ---
 
@@ -274,15 +319,15 @@ Se compare:
 [ERROR] Docker was not found.
 ```
 
-installa Docker Desktop e riapri il launcher.
+installa Docker Desktop, avvialo e riprova.
 
 ---
 
-## Docker è installato ma non parte
+## Docker è installato ma Launchpad non parte
 
 Assicurati che Docker Desktop sia aperto e abbia completato l'avvio.
 
-Poi riprova:
+Poi prova nuovamente:
 
 ```text
 START_LAUNCHPAD.bat
@@ -294,7 +339,7 @@ START_LAUNCHPAD.bat
 
 Controlla che non ci sia già un'altra istanza Rails o Launchpad attiva.
 
-Puoi fermare il container con:
+Puoi fermare il container Launchpad con:
 
 ```text
 STOP_LAUNCHPAD.bat
@@ -322,15 +367,22 @@ Clicca una volta nella pagina e poi premi uno dei pad.
 
 ## Una canzone non viene installata
 
-Il Song Builder esegue una validazione automatica.
+Il Song Builder e il backend eseguono controlli sul pacchetto.
 
-Controlla in particolare:
+Verifica in particolare:
 
 - struttura dello ZIP;
-- presenza delle cartelle `chain1` ... `chain4`;
+- cartelle delle chain;
 - nomi dei sample;
 - mapping dei pad;
-- eventuali indici non validi.
+- manifest della canzone;
+- eventuali valori o indici non validi.
+
+Per maggiori dettagli puoi consultare i log:
+
+```text
+CHECK_LAUNCHPAD_LOGS.bat
+```
 
 ---
 
@@ -341,22 +393,27 @@ Controlla in particolare:
 La baseline attuale utilizza:
 
 ```text
-Ruby        2.7.8
-Rails       6.1.7.10
-Bundler     2.4.22
-SQLite      1.4.2
+Ruby          3.3.12
+Rails         7.1.6
+Bundler       2.4.22
+Puma
+Sprockets
+SQLite        1.4.2
+
 JavaScript
 Howler.js
 Zip.js
 ```
 
-Questo stack è legacy e non rappresenta l'obiettivo finale del progetto.
+Il progetto deriva da una codebase molto più vecchia e alcune dipendenze e parti dell'architettura sono ancora in fase di revisione.
 
-Per questo motivo è consigliato utilizzare Docker invece di installare manualmente l'ambiente Ruby sul sistema host.
+Durante la modernizzazione sono già state eliminate diverse dipendenze e componenti legacy non più utilizzati, tra cui il vecchio sistema di autenticazione, il MIDI editor legacy, SassC, CoffeeScript, `sdoc`, `byebug` e altri componenti storici.
 
 ---
 
 ## Avvio tramite terminale
+
+Build e avvio:
 
 ```bash
 docker compose up -d --build
@@ -377,7 +434,7 @@ docker compose exec launchpad bash
 Rails console:
 
 ```bash
-docker compose exec launchpad bundle _2.4.22_ exec rails console
+docker compose exec launchpad bundle exec rails console
 ```
 
 Stop:
@@ -388,20 +445,46 @@ docker compose down
 
 ---
 
+## Test
+
+La repository include una suite automatica di test Rails.
+
+Eseguila con:
+
+```bash
+docker compose exec launchpad bundle exec rails test
+```
+
+La suite copre, tra le altre cose:
+
+- parsing e validazione dei manifest;
+- `UserSongStore`;
+- parsing ZIP;
+- API HTTP delle user song;
+- installazione e rimozione;
+- endpoint legacy rimossi;
+- isolamento dei dati utilizzati dai test.
+
+---
+
 # Struttura principale
 
 ```text
 Launchpad/
 ├── app/
 │   ├── assets/
+│   │   ├── javascripts/
+│   │   └── stylesheets/
 │   ├── controllers/
-│   ├── models/
+│   ├── services/
 │   └── views/
 ├── config/
+├── db/
 ├── public/
 │   ├── song_builder.html
 │   └── ...
 ├── script/
+├── test/
 ├── user_data/
 │   └── songs/
 ├── docker/
@@ -409,47 +492,77 @@ Launchpad/
 ├── compose.yaml
 ├── START_LAUNCHPAD.bat
 ├── STOP_LAUNCHPAD.bat
+├── CHECK_LAUNCHPAD_LOGS.bat
 └── README.md
 ```
+
+La struttura può evolvere ulteriormente durante la modernizzazione.
 
 ---
 
 # Roadmap
 
-La priorità è mantenere il comportamento del progetto mentre viene modernizzato.
-
-Obiettivi principali:
+La priorità del progetto è preservare il comportamento del Launchpad mentre la codebase viene modernizzata e resa più robusta.
 
 - [x] rendere il progetto nuovamente eseguibile;
+- [x] creare un ambiente Docker riproducibile;
 - [x] aggiungere un Song Builder;
-- [x] validare i sound pack;
+- [x] validare manifest e sound pack;
 - [x] installare canzoni dalla UI;
-- [x] separare le canzoni utente dal codice;
+- [x] separare le user song dal codice;
 - [x] aggiungere Manage Songs;
 - [x] aggiungere Remove Song;
-- [x] preparare un ambiente Docker;
-- [ ] aggiungere test automatici;
+- [x] aggiungere test automatici;
+- [x] caratterizzare l'API delle user song;
+- [x] rimuovere il sistema di autenticazione legacy;
+- [x] rimuovere il MIDI editor legacy;
+- [x] rimuovere i model ActiveRecord legacy;
+- [x] rimuovere diverse dipendenze Ruby non più utilizzate;
+- [x] migrare da Rails 4.x a Rails 7.1;
+- [x] migrare da Ruby 2.x a Ruby 3.3;
+- [ ] completare il security hardening;
+- [ ] migliorare la protezione dei percorsi filesystem e dei symlink;
+- [ ] introdurre limiti più robusti per ZIP e manifest;
+- [ ] rendere le installazioni delle user song atomiche;
+- [ ] migliorare la gestione degli errori HTTP;
+- [ ] rimuovere ActiveRecord e SQLite se non più necessari;
 - [ ] aggiungere CI con GitHub Actions;
-- [ ] migliorare il formato dei sound pack;
 - [ ] migliorare l'interfaccia del Song Builder;
-- [ ] modernizzare il frontend;
-- [ ] migrare progressivamente Rails;
-- [ ] migrare a una versione Ruby supportata;
-- [ ] eliminare le dipendenze legacy non necessarie.
+- [ ] modernizzare progressivamente il frontend;
+- [ ] continuare l'aggiornamento verso versioni Rails più recenti.
 
 ---
 
 # Sicurezza
 
-La versione attuale nasce da un'applicazione Rails legacy.
+Launchpad nasce da un'applicazione Rails legacy ed è ancora in fase di hardening.
 
-Il container Docker fornito è pensato principalmente per:
+L'ambiente Docker fornito è pensato principalmente per:
 
 - utilizzo locale;
 - sviluppo;
 - test.
 
-Non è consigliato esporre direttamente questa versione su Internet fino al completamento della modernizzazione dello stack e della revisione delle superfici di sicurezza.
+Per impostazione predefinita il servizio Docker viene pubblicato solamente sull'interfaccia locale:
+
+```text
+127.0.0.1:3000
+```
+
+e non viene quindi esposto automaticamente alla rete LAN.
+
+Non è comunque consigliato esporre direttamente l'applicazione su Internet finché non sarà completata la revisione delle superfici di sicurezza.
+
+Le aree attualmente oggetto di revisione includono:
+
+- rendering sicuro dei dati controllabili dall'utente;
+- protezione CSRF;
+- confinamento dei percorsi filesystem;
+- gestione dei symlink;
+- installazioni atomiche;
+- limiti sulle risorse ZIP;
+- limiti sui manifest;
+- gestione degli errori delle API.
 
 ---
 
@@ -459,7 +572,11 @@ Questo progetto deriva dalla repository originale:
 
 **Dan12/Launchpad**
 
-La fork mantiene il concetto originale di Launchpad virtuale e aggiunge strumenti per facilitarne installazione, utilizzo e gestione delle canzoni.
+La fork mantiene il concetto originale di Launchpad virtuale e aggiunge strumenti per facilitarne installazione, utilizzo, manutenzione e gestione delle canzoni.
+
+Repository della fork:
+
+https://github.com/LordSkull/Launchpad
 
 ---
 
@@ -467,11 +584,14 @@ La fork mantiene il concetto originale di Launchpad virtuale e aggiunge strument
 
 Il progetto originale è distribuito con licenza MIT.
 
+La licenza del codice non implica automaticamente diritti sul materiale audio incluso o utilizzato con il progetto.
+
 Controlla sempre separatamente i diritti relativi a:
 
 - sample audio;
 - sound pack;
 - canzoni;
+- stem;
 - project file di terze parti.
 
 Il fatto che un sound pack sia disponibile online non implica automaticamente il diritto di ridistribuirlo.
