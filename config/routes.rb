@@ -4,7 +4,6 @@ Rails.application.routes.draw do
   post "/get_asset_path" => "application#getAssetUrl"
   
   #song
-  post "/view_all_songs" => "song#view_all"
   
   get "/google13ecc4458e525973" => "application#google13ecc4458e525973"
 

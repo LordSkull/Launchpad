@@ -20,6 +20,12 @@ class ApplicationSecurityCharacterizationTest < ActionDispatch::IntegrationTest
     end
   end
 
+  def test_legacy_view_all_songs_route_is_not_available
+    assert_raises(ActionController::RoutingError) do
+      post '/view_all_songs'
+    end
+  end
+
   def test_legacy_login_route_is_not_available
     assert_raises(ActionController::RoutingError) do
       post '/login'
