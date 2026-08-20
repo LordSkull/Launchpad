@@ -89,7 +89,7 @@ class LocalSongsApiCharacterizationTest < ActionDispatch::IntegrationTest
     song_dir = File.join(@store.songs_root, 'api_song')
     manifest_path = File.join(song_dir, 'song.json')
     installed_zip_path = File.join(song_dir, 'sounds.zip')
-    assert_equal ['api_song'], Dir.children(@store.songs_root)
+    assert_equal ['api_song'], Dir.children(@store.songs_root).reject { |entry| entry.start_with?('.') }
     assert File.file?(manifest_path)
     assert File.file?(installed_zip_path)
     assert_equal File.binread(zip_path), File.binread(installed_zip_path)

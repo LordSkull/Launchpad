@@ -19,12 +19,18 @@ class UserSongStoreInstallAtomicityTest < ActiveSupport::TestCase
   end
 
   test 'normal install publishes both files and leaves no temp directory' do
-    @store.install!(@manifest)
+    result = @store.install!(@manifest)
 
     destination = destination_path
     assert File.directory?(destination)
     assert_equal %w[song.json sounds.zip], Dir.children(destination).sort
+    assert File.file?(lock_path)
+    assert_equal ['test_song'], @store.list.map { |song| song['filename'] }
+    assert_equal 'test_song', result['filename']
+    assert_equal File.join('user_data', 'songs', 'test_song', 'song.json'), result['manifest_path']
+    assert_equal File.join('user_data', 'songs', 'test_song', 'sounds.zip'), result['zip_path']
     assert_empty temp_directories
+    assert_install_lock_available
     assert_sibling_unchanged
   end
 
@@ -40,6 +46,7 @@ class UserSongStoreInstallAtomicityTest < ActiveSupport::TestCase
     assert_equal 'existing destination', File.read(marker_path, encoding: 'UTF-8')
     assert_equal ['existing.txt'], Dir.children(destination)
     assert_empty temp_directories
+    assert_install_lock_available
     assert_sibling_unchanged
   end
 
@@ -53,6 +60,7 @@ class UserSongStoreInstallAtomicityTest < ActiveSupport::TestCase
     assert_equal 'simulated manifest write failure', error.message
     refute File.exist?(destination_path)
     assert_empty temp_directories
+    assert_install_lock_available
     assert_sibling_unchanged
   end
 
@@ -71,6 +79,7 @@ class UserSongStoreInstallAtomicityTest < ActiveSupport::TestCase
     assert manifest_was_written
     refute File.exist?(destination_path)
     assert_empty temp_directories
+    assert_install_lock_available
     assert_sibling_unchanged
   end
 
@@ -95,60 +104,118 @@ class UserSongStoreInstallAtomicityTest < ActiveSupport::TestCase
     assert_equal true, observed[:same_device]
     refute File.exist?(destination_path)
     assert_empty temp_directories
+    assert_install_lock_available
     assert_sibling_unchanged
   end
 
-  test 'a destination created immediately before move receives the temp directory as a nested child' do
-    original_move = FileUtils.method(:mv)
-    moved_temp_name = nil
+  test 'a destination created before publication causes an error and is preserved' do
+    original_copy = FileUtils.method(:cp)
+    move_called = false
     concurrent_marker = File.join(destination_path, 'concurrent.txt')
-    racing_move = proc do |source, destination, *args, **kwargs|
-      moved_temp_name = File.basename(source)
-      FileUtils.mkdir_p(destination)
+    racing_copy = proc do |source, destination, *args, **kwargs|
+      original_copy.call(source, destination, *args, **kwargs)
+      FileUtils.mkdir_p(destination_path)
       File.write(concurrent_marker, 'concurrent destination', mode: 'w', encoding: 'UTF-8')
-      original_move.call(source, destination, *args, **kwargs)
+    end
+    move_probe = proc { |_source, _destination, *_args, **_kwargs| move_called = true }
+
+    result = nil
+    error = assert_raises(RuntimeError) do
+      FileUtils.stub(:cp, racing_copy) do
+        FileUtils.stub(:mv, move_probe) { result = @store.install!(@manifest) }
+      end
     end
 
-    result = FileUtils.stub(:mv, racing_move) { @store.install!(@manifest) }
-
-    nested_temp = File.join(destination_path, moved_temp_name)
-    assert_match(temp_name_pattern, moved_temp_name)
-    assert File.directory?(nested_temp)
-    assert_equal %w[song.json sounds.zip], Dir.children(nested_temp).sort
+    assert_match(/already installed/, error.message)
+    assert_nil result
+    refute move_called
     assert_equal 'concurrent destination', File.read(concurrent_marker, encoding: 'UTF-8')
+    assert_equal ['concurrent.txt'], Dir.children(destination_path)
     refute File.exist?(File.join(destination_path, 'song.json'))
     refute File.exist?(File.join(destination_path, 'sounds.zip'))
-    assert_equal File.join('user_data', 'songs', 'test_song', 'song.json'), result['manifest_path']
-    assert_equal File.join('user_data', 'songs', 'test_song', 'sounds.zip'), result['zip_path']
     assert_empty @store.list
+    assert_empty temp_directories
+    assert_install_lock_available
+    assert_sibling_unchanged
+  end
+
+  test 'a symlink at the install lock path is rejected without touching its target' do
+    outside_lock = File.join(@temporary_root, 'outside-install.lock')
+    File.write(outside_lock, 'outside lock marker', mode: 'w', encoding: 'UTF-8')
+    File.symlink(outside_lock, lock_path)
+
+    error = assert_raises(RuntimeError) { @store.install!(@manifest) }
+
+    assert_match(/Unsafe song storage path/, error.message)
+    assert File.symlink?(lock_path)
+    assert_equal 'outside lock marker', File.read(outside_lock, encoding: 'UTF-8')
+    refute File.exist?(destination_path)
     assert_empty temp_directories
     assert_sibling_unchanged
   end
 
-  test 'list exposes only a complete orphan temp directory' do
-    empty_temp = create_orphan_temp('test_song.tmp-123-1', manifest: false, zip: false)
-    manifest_temp = create_orphan_temp('test_song.tmp-123-2', manifest: true, zip: false)
-    complete_temp = create_orphan_temp('test_song.tmp-123-3', manifest: true, zip: true)
+  test 'list hides incomplete and complete orphan temp directories' do
+    empty_temp = create_orphan_temp('.test_song.tmp-123-1', manifest: false, zip: false)
+    manifest_temp = create_orphan_temp('.test_song.tmp-123-2', manifest: true, zip: false)
+    complete_temp = create_orphan_temp('.test_song.tmp-123-3', manifest: true, zip: true)
 
     songs = @store.list
 
     [empty_temp, manifest_temp, complete_temp].each do |path|
       assert_match(temp_name_pattern, File.basename(path))
+      assert File.directory?(path)
     end
-    assert_equal ['test_song.tmp-123-3'], songs.map { |song| song['filename'] }
-    assert_equal ['Orphan test_song.tmp-123-3'], songs.map { |song| song['song_name'] }
-    assert_equal true, songs.first['user_installed']
+    assert_empty songs
     assert_sibling_unchanged
   end
 
-  test 'two installers can calculate the same next song number before either writes' do
+  test 'two cooperative installers are serialized and receive consecutive song numbers' do
+    first_manifest = build_valid_manifest('first_song')
+    second_manifest = build_valid_manifest('second_song')
+    first_store = UserSongStore.new(@temporary_root)
     second_store = UserSongStore.new(@temporary_root)
+    original_copy = FileUtils.method(:cp)
+    first_copy_started = Queue.new
+    release_first_copy = Queue.new
+    second_install_started = Queue.new
+    copy_with_barrier = proc do |source, destination, *args, **kwargs|
+      if source == first_manifest.zip_path
+        first_copy_started << true
+        release_first_copy.pop
+      end
+      original_copy.call(source, destination, *args, **kwargs)
+    end
+    first_result = nil
+    second_result = nil
+    lock_was_held = nil
 
-    first_number = @store.next_song_number
-    second_number = second_store.next_song_number
+    FileUtils.stub(:cp, copy_with_barrier) do
+      first_thread = Thread.new { first_store.install!(first_manifest) }
+      first_copy_started.pop
 
-    assert_equal 1, first_number
-    assert_equal first_number, second_number
+      File.open(lock_path, File::RDWR) do |lock|
+        lock_was_held = lock.flock(File::LOCK_EX | File::LOCK_NB) == false
+      end
+
+      second_thread = Thread.new do
+        second_install_started << true
+        second_store.install!(second_manifest)
+      end
+      second_install_started.pop
+      release_first_copy << true
+
+      first_result = first_thread.value
+      second_result = second_thread.value
+    end
+
+    assert lock_was_held
+    assert_equal first_result['song_number'] + 1, second_result['song_number']
+    assert_equal 2, [first_result['song_number'], second_result['song_number']].uniq.length
+    assert_equal %w[first_song second_song], @store.list.map { |song| song['filename'] }.sort
+    [first_result, second_result].each do |result|
+      installed_path = File.join(@store.songs_root, result['filename'])
+      assert_equal %w[song.json sounds.zip], Dir.children(installed_path).sort
+    end
     assert_empty temp_directories
     assert_sibling_unchanged
   end
@@ -159,8 +226,12 @@ class UserSongStoreInstallAtomicityTest < ActiveSupport::TestCase
     File.join(@store.songs_root, 'test_song')
   end
 
+  def lock_path
+    File.join(@store.songs_root, '.install.lock')
+  end
+
   def temp_name_pattern
-    /\Atest_song\.tmp-\d+-\d+\z/
+    /\A\.(?:test_song|first_song|second_song)\.tmp-\d+-\d+\z/
   end
 
   def temp_directories
@@ -178,12 +249,12 @@ class UserSongStoreInstallAtomicityTest < ActiveSupport::TestCase
     path
   end
 
-  def build_valid_manifest
-    input_dir = File.join(@temporary_root, 'inputs')
+  def build_valid_manifest(filename = 'test_song')
+    input_dir = File.join(@temporary_root, 'inputs', filename)
     FileUtils.mkdir_p(input_dir)
     manifest_path = File.join(input_dir, 'song.json')
     zip_path = File.join(input_dir, 'sounds.zip')
-    File.write(manifest_path, JSON.generate(valid_manifest_hash), mode: 'w', encoding: 'UTF-8')
+    File.write(manifest_path, JSON.generate(valid_manifest_hash(filename)), mode: 'w', encoding: 'UTF-8')
     write_empty_zip(zip_path)
 
     manifest = SongManifest.new(manifest_path, zip_path).validate!
@@ -191,11 +262,11 @@ class UserSongStoreInstallAtomicityTest < ActiveSupport::TestCase
     manifest
   end
 
-  def valid_manifest_hash
+  def valid_manifest_hash(filename)
     chains = %w[chain1 chain2 chain3 chain4]
     {
-      'song_name' => 'Atomicity Test Song',
-      'filename' => 'test_song',
+      'song_name' => "Atomicity Test Song #{filename}",
+      'filename' => filename,
       'bpm' => 120,
       'mappings' => chains.to_h { |chain| [chain, Array.new(48) { '' }] },
       'holdToPlay' => chains.to_h { |chain| [chain, []] },
@@ -210,5 +281,12 @@ class UserSongStoreInstallAtomicityTest < ActiveSupport::TestCase
 
   def assert_sibling_unchanged
     assert_equal 'keep sibling', File.read(@sibling_path, encoding: 'UTF-8')
+  end
+
+  def assert_install_lock_available
+    File.open(lock_path, File::RDWR) do |lock|
+      assert_equal 0, lock.flock(File::LOCK_EX | File::LOCK_NB)
+      assert_equal 0, lock.flock(File::LOCK_UN)
+    end
   end
 end

@@ -44,54 +44,9 @@ class UserSongStore
   def install!(manifest, allow_public_zip_conflict = false)
     raise 'Song package must be valid before installation.' unless manifest.valid?
 
-    ensure_safe_root!
-    filename = normalize_filename(manifest.filename)
-    target_dir = File.join(songs_root, filename)
-    raise "Song '#{filename}' is already installed." if path_entry_exists?(target_dir)
-
-    public_zip = File.join(repo_root, 'public', 'zip', 'sounds', "#{filename}.zip")
-    if File.exist?(public_zip) && !allow_public_zip_conflict
-      raise "Filename '#{filename}' conflicts with a built-in song. Choose another ZIP filename."
+    with_install_lock do
+      install_under_lock!(manifest, allow_public_zip_conflict)
     end
-
-    number = manifest.song_number || next_song_number
-    if existing_song_numbers.include?(number)
-      raise "song_number #{number} already exists. Leave Song ID blank to auto-assign, or choose another ID."
-    end
-
-    data = deep_copy(manifest.data)
-    data.delete('variable_name')
-    data['schema_version'] = (data['schema_version'] || 1).to_i
-    data['song_number'] = number
-    data['filename'] = filename
-    data['user_installed'] = true
-
-    tmp_dir = target_dir + ".tmp-#{Process.pid}-#{rand(1_000_000)}"
-    FileUtils.mkdir_p(tmp_dir)
-
-    begin
-      real_root = ensure_safe_root!
-      raise 'Unsafe song storage path.' unless safe_real_path?(tmp_dir, real_root, :directory)
-
-      File.write(File.join(tmp_dir, 'song.json'), JSON.pretty_generate(data) + "\n", mode: 'w', encoding: 'UTF-8')
-      FileUtils.cp(manifest.zip_path, File.join(tmp_dir, 'sounds.zip'))
-
-      real_root = ensure_safe_root!
-      raise 'Unsafe song storage path.' unless safe_real_path?(tmp_dir, real_root, :directory)
-      raise "Song '#{filename}' is already installed." if path_entry_exists?(target_dir)
-
-      FileUtils.mv(tmp_dir, target_dir)
-    rescue StandardError
-      FileUtils.rm_rf(tmp_dir)
-      raise
-    end
-
-    {
-      'song_number' => number,
-      'filename' => filename,
-      'manifest_path' => relative(File.join(target_dir, 'song.json')),
-      'zip_path' => relative(File.join(target_dir, 'sounds.zip'))
-    }
   end
 
   def remove!(filename)
@@ -152,6 +107,77 @@ class UserSongStore
   end
 
   private
+
+  def install_under_lock!(manifest, allow_public_zip_conflict)
+    ensure_safe_root!
+    filename = normalize_filename(manifest.filename)
+    target_dir = File.join(songs_root, filename)
+    raise "Song '#{filename}' is already installed." if path_entry_exists?(target_dir)
+
+    public_zip = File.join(repo_root, 'public', 'zip', 'sounds', "#{filename}.zip")
+    if File.exist?(public_zip) && !allow_public_zip_conflict
+      raise "Filename '#{filename}' conflicts with a built-in song. Choose another ZIP filename."
+    end
+
+    number = manifest.song_number || next_song_number
+    if existing_song_numbers.include?(number)
+      raise "song_number #{number} already exists. Leave Song ID blank to auto-assign, or choose another ID."
+    end
+
+    data = deep_copy(manifest.data)
+    data.delete('variable_name')
+    data['schema_version'] = (data['schema_version'] || 1).to_i
+    data['song_number'] = number
+    data['filename'] = filename
+    data['user_installed'] = true
+
+    tmp_dir = File.join(songs_root, ".#{filename}.tmp-#{Process.pid}-#{rand(1_000_000)}")
+    FileUtils.mkdir_p(tmp_dir)
+
+    begin
+      real_root = ensure_safe_root!
+      raise 'Unsafe song storage path.' unless safe_real_path?(tmp_dir, real_root, :directory)
+
+      File.write(File.join(tmp_dir, 'song.json'), JSON.pretty_generate(data) + "\n", mode: 'w', encoding: 'UTF-8')
+      FileUtils.cp(manifest.zip_path, File.join(tmp_dir, 'sounds.zip'))
+
+      real_root = ensure_safe_root!
+      raise 'Unsafe song storage path.' unless safe_real_path?(tmp_dir, real_root, :directory)
+      raise "Song '#{filename}' is already installed." if path_entry_exists?(target_dir)
+
+      FileUtils.mv(tmp_dir, target_dir)
+    rescue StandardError
+      FileUtils.rm_rf(tmp_dir)
+      raise
+    end
+
+    {
+      'song_number' => number,
+      'filename' => filename,
+      'manifest_path' => relative(File.join(target_dir, 'song.json')),
+      'zip_path' => relative(File.join(target_dir, 'sounds.zip'))
+    }
+  end
+
+  def with_install_lock
+    real_root = ensure_safe_root!
+    lock_path = File.join(songs_root, '.install.lock')
+    lock_stat = lstat(lock_path)
+    if lock_stat && (lock_stat.symlink? || !lock_stat.file? || !safe_real_path?(lock_path, real_root, :file))
+      raise 'Unsafe song storage path.'
+    end
+
+    File.open(lock_path, File::RDWR | File::CREAT, 0o600) do |lock|
+      lock.flock(File::LOCK_EX)
+      begin
+        real_root = ensure_safe_root!
+        raise 'Unsafe song storage path.' unless safe_real_path?(lock_path, real_root, :file)
+        yield
+      ensure
+        lock.flock(File::LOCK_UN)
+      end
+    end
+  end
 
   def ensure_safe_root!
     root_stat = File.lstat(songs_root)
