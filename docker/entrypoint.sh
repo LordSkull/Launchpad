@@ -12,7 +12,7 @@ DB_FILE="/app/storage/development.sqlite3"
 
 if [ ! -f "$DB_FILE" ]; then
   echo "[Launchpad] Initializing SQLite database..."
-  bundle _1.17.3_ exec rake db:setup
+  bundle _2.4.22_ exec rake db:setup
 fi
 
 echo "[Launchpad] Starting on http://localhost:3000"
