@@ -209,8 +209,13 @@ var Keyboard_Space = new function(){
     
     // shows and formats all of the UI elements
     Keyboard.prototype.initUI = function(){
-        for(var s in songDatas)
-            $("#songs_container").append("<div class='song_selection' songInd='"+s+"'>"+songDatas[s].song_name+"</div>");
+        for(var s in songDatas){
+            var songSelection = $("<div></div>")
+                .addClass("song_selection")
+                .attr("songInd", s)
+                .text(songDatas[s].song_name);
+            $("#songs_container").append(songSelection);
+        }
         $("[songInd='"+currentSongInd+"']").css("background-color","rgb(220,220,220)");
         
         var mainObj = this; 
