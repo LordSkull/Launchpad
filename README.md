@@ -343,7 +343,7 @@ La baseline attuale utilizza:
 ```text
 Ruby        2.6.10
 Rails       4.2.10
-Bundler     1.17.3
+Bundler     2.4.22
 SQLite
 JavaScript
 Howler.js
@@ -377,7 +377,7 @@ docker compose exec launchpad bash
 Rails console:
 
 ```bash
-docker compose exec launchpad bundle _1.17.3_ exec rails console
+docker compose exec launchpad bundle _2.4.22_ exec rails console
 ```
 
 Stop:
