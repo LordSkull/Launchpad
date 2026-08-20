@@ -9,6 +9,7 @@ services:
     environment:
       RAILS_ENV: development
       DATABASE_URL: sqlite3:/app/storage/development.sqlite3
+      DISABLE_SPRING: "1"
     volumes:
       # User-installed songs remain visible on the host and survive container rebuilds.
       - ./user_data:/app/user_data
