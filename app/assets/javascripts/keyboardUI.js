@@ -7,7 +7,7 @@ var Keyboard_UI_Space = new function(){
     var KeyboardUI = function(){}
     
     KeyboardUI.prototype.initUI = function(){
-        // info, links, songs, and editor buttons
+        // info, links, and songs buttons
         $(".click_button").css("display", "inline-block");
         
         $(".click_button").click(function(){

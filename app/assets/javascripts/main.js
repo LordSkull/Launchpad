@@ -1,7 +1,7 @@
 $(document).ready(function(){
     Zip_Space.initialize();
     
-    keyboard = Keyboard_Space.initKeyboard(true);
+    keyboard = Keyboard_Space.initKeyboard();
     
     $(window).resize(function(){
         $(".buttons").css("margin", "0");
