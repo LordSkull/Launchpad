@@ -30,9 +30,22 @@ h1{
     background-color: rgb(255,160,0);
 }
 
+.button-label-long{
+    font-size: 18px;
+    line-height: 40px;
+}
+
 .buttons{
     display:inline-block;
     min-width: 840px;
+}
+
+.keyboard-layout-control{
+    margin: 10px 0;
+}
+
+.keyboard-layout-control select{
+    font: inherit;
 }
 
 .link{

@@ -125,6 +125,12 @@ Puoi utilizzare:
 - mouse;
 - controlli della pagina.
 
+### Layout tastiera
+
+Il selettore nella pagina principale permette di scegliere tra layout **US** (predefinito) e **Italian**. La scelta viene ricordata nel `localStorage` del browser e non modifica le canzoni, che continuano ad associare i sample agli indici dei pad.
+
+Nel layout US il pad 48 usa il tasto `\`; nel layout italiano la quarta riga inizia con il tasto `<` della tastiera ISO.
+
 Il Launchpad è organizzato in **4 chain**, ognuna composta da **48 pad**.
 
 ---

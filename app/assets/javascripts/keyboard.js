@@ -75,35 +75,18 @@ var Keyboard_Space = new function(){
         }
     }
     
-    Keyboard.prototype.getKeyInd = function(kc){
-        var keyInd = keyPairs.indexOf(kc);
-        if(keyInd == -1)
-            keyInd = backupPairs.indexOf(kc);
-            
-        return keyInd;
-    }
-    
-    Keyboard.prototype.switchSoundPackCheck = function(kc){
-        // up
-        if(kc == 39){
-            this.switchSoundPack(3);
+    Keyboard.prototype.switchSoundPackCheck = function(code){
+        var soundPackByCode = {
+            ArrowLeft: 0,
+            ArrowUp: 1,
+            ArrowDown: 2,
+            ArrowRight: 3
+        };
+        if(soundPackByCode.hasOwnProperty(code)){
+            this.switchSoundPack(soundPackByCode[code]);
             return true;
         }
-        // left
-        else if(kc == 37){
-            this.switchSoundPack(0);
-            return true;
-        }
-        // down
-        else if(kc == 38){
-            this.switchSoundPack(1);
-            return true;
-        }
-        // right
-        else if(kc == 40){
-            this.switchSoundPack(2);
-            return true;
-        }
+        return false;
     }
     
     // switch sound pack and update pressures
@@ -112,7 +95,7 @@ var Keyboard_Space = new function(){
         for(var i = 0; i < 4; i++)
             for(var j = 0; j < 12; j++)
                 if($(".button-"+(i*12+j)+"").attr("released") == "false")
-                    this.releaseKey(keyPairs[i*12+j]);
+                    this.releasePad(i*12+j);
         
         // set the new soundpack
         currentSoundPack = sp;
@@ -135,77 +118,63 @@ var Keyboard_Space = new function(){
     
     // key released
     // stop playing sound if holdToPlay
-    Keyboard.prototype.releaseKey = function(kc){
-        var keyInd = this.getKeyInd(kc);
-        if(currentSounds[currentSoundPack][keyInd] != null){
-            this.midiKeyUp(kc);
+    Keyboard.prototype.releasePad = function(padIndex){
+        if(currentSounds[currentSoundPack][padIndex] != null){
+            this.midiKeyUp(padIndex);
         }
     }
     
-    Keyboard.prototype.midiKeyUp = function(kc){
-        if(this.switchSoundPackCheck(kc)){
-            // do nothing
-        }
-        else{
-            var kcInd = this.getKeyInd(kc);
-            if(currentSounds[currentSoundPack][kcInd] != null){
-                if($(".button-"+(kcInd)+"").attr("pressure") == "true")
-                    currentSounds[currentSoundPack][kcInd].stop();
-                $(".button-"+(kcInd)+"").attr("released","true");
-                // holdToPlay coloring, turned off for now
+    Keyboard.prototype.midiKeyUp = function(padIndex){
+        if(currentSounds[currentSoundPack][padIndex] != null){
+            if($(".button-"+(padIndex)+"").attr("pressure") == "true")
+                currentSounds[currentSoundPack][padIndex].stop();
+            $(".button-"+(padIndex)+"").attr("released","true");
+            // holdToPlay coloring, turned off for now
 
-                // Removes Style Attribute to clean up HTML
-                $(".button-"+(kcInd)+"").removeAttr("style");
+            // Removes Style Attribute to clean up HTML
+            $(".button-"+(padIndex)+"").removeAttr("style");
 
-                if($(".button-"+(kcInd)+"").hasClass("pressed") == true)
-                	$(".button-"+(kcInd)+"").removeClass("pressed");
+            if($(".button-"+(padIndex)+"").hasClass("pressed") == true)
+	                $(".button-"+(padIndex)+"").removeClass("pressed");
 
-                //$(".button-"+(kcInd)+"").css("background-color", $(".button-"+(kcInd)+"").attr("pressure") == "true" ? "lightgray" : "white");
-            }
+            //$(".button-"+(padIndex)+"").css("background-color", $(".button-"+(padIndex)+"").attr("pressure") == "true" ? "lightgray" : "white");
         }
     }
     
     // play the key by finding the mapping,
     // stopping all sounds in key's linkedArea
     // and then playing sound
-    Keyboard.prototype.playKey = function(kc){
-        var keyInd = this.getKeyInd(kc);
-        if(currentSounds[currentSoundPack][keyInd] != null){
-            this.midiKeyDown(kc);
+    Keyboard.prototype.pressPad = function(padIndex){
+        if(currentSounds[currentSoundPack][padIndex] != null){
+            this.midiKeyDown(padIndex);
         }
     }
     
-    Keyboard.prototype.midiKeyDown = function(kc){
-        if(this.switchSoundPackCheck(kc)){
-            // do nothing
-        }
-        else{
-            var kcInd = this.getKeyInd(kc);
-            if(currentSounds[currentSoundPack][kcInd] != null){
-                currentSounds[currentSoundPack][kcInd].stop();
-                currentSounds[currentSoundPack][kcInd].play();
+    Keyboard.prototype.midiKeyDown = function(padIndex){
+        if(currentSounds[currentSoundPack][padIndex] != null){
+            currentSounds[currentSoundPack][padIndex].stop();
+            currentSounds[currentSoundPack][padIndex].play();
                 
-                // go through all linked Areas in current chain
-                currentSongData["linkedAreas"]["chain"+(currentSoundPack+1)].forEach(function(el, ind, arr){
-                    // for ever linked area array
-                    for(var j = 0; j < el.length; j++){
-                        // if key code is in linked area array
-                        if(kcInd == el[j]){
-                            // stop all other sounds in linked area array
-                            for(var k = 0; k < el.length; k++){
-                                if(k != j)
-                                    currentSounds[currentSoundPack][el[k]].stop();
-                            }
-                            break;
+            // go through all linked Areas in current chain
+            currentSongData["linkedAreas"]["chain"+(currentSoundPack+1)].forEach(function(el, ind, arr){
+                // for ever linked area array
+                for(var j = 0; j < el.length; j++){
+                    // if pad index is in linked area array
+                    if(padIndex == el[j]){
+                        // stop all other sounds in linked area array
+                        for(var k = 0; k < el.length; k++){
+                            if(k != j)
+                                currentSounds[currentSoundPack][el[k]].stop();
                         }
+                        break;
                     }
-                });
+                }
+            });
                 
-                // set button color and attribute
-                $(".button-"+(kcInd)+"").addClass("pressed");
-                $(".button-"+(kcInd)+"").attr("released","false");
-                //$(".button-"+(kcInd)+"").css("background-color","rgb(255,160,0)");
-            }
+            // set button color and attribute
+            $(".button-"+(padIndex)+"").addClass("pressed");
+            $(".button-"+(padIndex)+"").attr("released","false");
+            //$(".button-"+(padIndex)+"").css("background-color","rgb(255,160,0)");
         }
     }
     
@@ -225,6 +194,7 @@ var Keyboard_Space = new function(){
         $(".song_selection").click(function() {
             var tempS = parseInt($(this).attr("songInd"));
             if(tempS != currentSongInd && !loadingSongs){
+                mainObj.keyboardUI.releaseActiveKeyboardPads(mainObj);
                 loadingSongs = true;
                 currentSongInd = tempS
                 currentSongData = songDatas[currentSongInd];
@@ -270,22 +240,3 @@ var Keyboard_Space = new function(){
     var loadingSongs = true;
 
 }
-
-// Global Variables
-// ascii key mappings to array index
-var keyPairs = [49,50,51,52,53,54,55,56,57,48,189,187,
-                81,87,69,82,84,89,85,73,79,80,219,221,
-                65,83,68,70,71,72,74,75,76,186,222,13,
-                90,88,67,86,66,78,77,188,190,191,16,-1];
-            
-// alternate keys for firefox
-var backupPairs = [49,50,51,52,53,54,55,56,57,48,173,61,
-                   81,87,69,82,84,89,85,73,79,80,219,221,
-                   65,83,68,70,71,72,74,75,76,59,222,13,
-                   90,88,67,86,66,78,77,188,190,191,16,-1];
-               
-// letter to show in each button
-var letterPairs = ["1","2","3","4","5","6","7","8","9","0","-","=",
-                   "Q","W","E","R","T","Y","U","I","O","P","[","]",
-                   "A","S","D","F","G","H","J","K","L",";","'","\\n",
-                   "Z","X","C","V","B","N","M",",",".","/","\\s","NA"];
