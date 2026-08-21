@@ -15,9 +15,9 @@ var Zip_Space = new function(){
       // skip this entry if it is a directory
       if(entries[i].directory)
         interateEntries(entries, i+1, reader, callback);
-      // only accept a file with the extension .mp3
-      else if(entries[i].filename.endsWith('.mp3')) {
-        entries[i].getData(new zip.Data64URIWriter('audio/mp3'), function(data) {
+      // only accept supported audio sample files
+      else if(Audio_Sample_Space.isSupported(entries[i].filename)) {
+        entries[i].getData(new zip.Data64URIWriter(Audio_Sample_Space.mimeTypeFor(entries[i].filename)), function(data) {
           Zip_Space.dataArray[entries[i].filename] = data;
           interateEntries(entries, i+1, reader, callback);
         });

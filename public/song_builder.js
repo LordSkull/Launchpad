@@ -120,8 +120,8 @@
 
       entries.forEach(function (entry) {
         var normalized = entry.replace(/\\/g, '/');
-        var m = normalized.match(/^sounds\/chain([1-4])\/(.+)\.mp3$/);
-        if (m) state.samples['chain' + m[1]].push(m[2]);
+        var m = normalized.match(/^sounds\/chain([1-4])\/(.+)$/);
+        if (m && Audio_Sample_Space.isSupported(m[2])) state.samples['chain' + m[1]].push(m[2]);
       });
 
       CHAINS.forEach(function (chain) {
@@ -132,7 +132,7 @@
         $('filename').value = file.name.replace(/\.zip$/i, '').replace(/[^A-Za-z0-9_-]+/g, '_');
       }
 
-      var counts = CHAINS.map(function (c, i) { return 'chain' + (i + 1) + ': ' + state.samples[c].length + ' MP3'; });
+      var counts = CHAINS.map(function (c, i) { return 'chain' + (i + 1) + ': ' + state.samples[c].length + ' audio sample(s)'; });
       var junk = entries.filter(function (e) { return e.indexOf('__MACOSX/') === 0 || /(^|\/)\.DS_Store$/.test(e); }).length;
       $('zipStatus').className = 'status good';
       $('zipStatus').textContent = 'ZIP read successfully.\n' + counts.join(' | ') + (junk ? '\nNote: ' + junk + ' macOS metadata entries found.' : '');
@@ -201,7 +201,7 @@
       if (data.mappings[chain].length !== 48) errors.push(chain + ' does not contain 48 pad positions.');
       data.mappings[chain].forEach(function (sample, pad) {
         if (!sample) return;
-        var expected = 'sounds/chain' + (ci + 1) + '/' + sample + '.mp3';
+        var expected = 'sounds/chain' + (ci + 1) + '/' + Audio_Sample_Space.resolveFilename(sample);
         if (state.zipEntries.indexOf(expected) < 0) errors.push(chain + ' pad ' + PAD_LABELS[pad] + ' references missing ' + expected);
       });
       data.linkedAreas[chain].forEach(function (group, gi) {
