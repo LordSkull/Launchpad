@@ -15,4 +15,5 @@
 //= require turbolinks
 //= require 00_user_songs
 //= require audioSamples
+//= require keyboardLayouts
 //= require_tree .

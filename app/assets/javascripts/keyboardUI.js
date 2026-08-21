@@ -4,7 +4,10 @@ var Keyboard_UI_Space = new function(){
         return new KeyboardUI();
     }
     
-    var KeyboardUI = function(){}
+    var KeyboardUI = function(){
+        this.currentLayoutId = Keyboard_Layout_Space.loadLayout();
+        this.activePadByCode = {};
+    }
     
     KeyboardUI.prototype.initUI = function(){
         // info, links, and songs buttons
@@ -38,26 +41,26 @@ var Keyboard_UI_Space = new function(){
     
     // setup touchscreen, kind of works
     KeyboardUI.prototype.touchScreenSetup = function(keyboard){
-        $(".button").bind("touchstart", function(){
+        $(".button").bind("touchstart", function(event){
             if (Howler.ctx.state != "running") {
                 Howler.ctx.resume();
             }
            var num = parseInt($(this).attr("buttonnum"));
-           keyboard.playKey(keyPairs[num]);
+           keyboard.pressPad(num);
            event.preventDefault();
            return false;
         });
         
-        $(".button").bind("touchend", function(){
+        $(".button").bind("touchend", function(event){
            var num = parseInt($(this).attr("buttonnum"));
-           keyboard.releaseKey(keyPairs[num]);
+           keyboard.releasePad(num);
            event.preventDefault();
            return false;
         });
         
-        $(".button").bind("touchcancel", function(){
+        $(".button").bind("touchcancel", function(event){
            var num = parseInt($(this).attr("buttonnum"));
-           keyboard.releaseKey(keyPairs[num]);
+           keyboard.releasePad(num);
            event.preventDefault();
            return false;
         });
@@ -73,14 +76,22 @@ var Keyboard_UI_Space = new function(){
                 var press = false;
                 if(currentSongData["holdToPlay"]["chain"+(currentSoundPack+1)].indexOf((i*12+j)) != -1)
                     press = true;
-                var str = ""+letterPairs[i*12+j];
-                $(".button-row:last").append('<div class="button button-'+(i*12+j)+'" pressure="'+press+'" released="true" buttonnum='+(i*12+j)+'>'+str+'</div>');
+                var str = Keyboard_Layout_Space.getLabel(this.currentLayoutId, i*12+j);
+                var button = $("<div></div>")
+                    .addClass("button button-"+(i*12+j))
+                    .toggleClass("button-label-long", str.length > 2)
+                    .attr("pressure", press)
+                    .attr("released", "true")
+                    .attr("buttonnum", i*12+j)
+                    .text(str);
+                $(".button-row:last").append(button);
                 // holdToPlay coloring, turned off for now
                 //$('.button-'+(i*12+j)+'').css("background-color", $('.button-'+(i*12+j)+'').attr("pressure") == "true" ? "lightgray" : "white");
             }
         }
         
         $(".soundPack").html("Sound Pack: "+(currentSoundPack+1));
+        $("#keyboard_layout").val(this.currentLayoutId);
         
         if(!loaded){
             $("#sound_pack_buttons").append('<div class="sound_pack_button sound_pack_button_2">^</div>');
@@ -90,6 +101,7 @@ var Keyboard_UI_Space = new function(){
             $(".sound_pack_button_"+(currentSoundPack+1)).css("background-color","rgb(255,160,0)");
             
             this.touchScreenSetup(keyboard);
+            this.layoutSelectionSetup(keyboard);
             
             this.keyPressSetup(keyboard);
             
@@ -100,57 +112,93 @@ var Keyboard_UI_Space = new function(){
             loaded = true;
         }
     }
+
+    KeyboardUI.prototype.isInteractiveTarget = function(target){
+        while(target && target != document){
+            var tagName = target.tagName ? target.tagName.toLowerCase() : "";
+            if(tagName == "input" || tagName == "textarea" || tagName == "select" || tagName == "button" || tagName == "a" || target.isContentEditable)
+                return true;
+            target = target.parentElement;
+        }
+        return false;
+    }
+
+    KeyboardUI.prototype.releaseActiveKeyboardPads = function(keyboard){
+        for(var code in this.activePadByCode){
+            if(this.activePadByCode.hasOwnProperty(code))
+                keyboard.releasePad(this.activePadByCode[code]);
+        }
+        this.activePadByCode = {};
+    }
+
+    KeyboardUI.prototype.updateKeyboardLabels = function(){
+        for(var i = 0; i < 48; i++){
+            var label = Keyboard_Layout_Space.getLabel(this.currentLayoutId, i);
+            $(".button-"+i)
+                .toggleClass("button-label-long", label.length > 2)
+                .text(label);
+        }
+    }
+
+    KeyboardUI.prototype.layoutSelectionSetup = function(keyboard){
+        var thisObj = this;
+        $("#keyboard_layout").val(this.currentLayoutId).change(function(){
+            thisObj.releaseActiveKeyboardPads(keyboard);
+            thisObj.currentLayoutId = Keyboard_Layout_Space.saveLayout($(this).val());
+            $(this).val(thisObj.currentLayoutId);
+            thisObj.updateKeyboardLabels();
+        });
+    }
+
+    KeyboardUI.prototype.getEventCode = function(event){
+        if(event.code)
+            return event.code;
+        if(event.originalEvent)
+            return event.originalEvent.code;
+        return undefined;
+    }
     
     // setup keypress on document
     KeyboardUI.prototype.keyPressSetup = function(keyboard){
+        var thisObj = this;
         $(document).keydown(function(e){
+            if(thisObj.isInteractiveTarget(e.target))
+                return;
             if (Howler.ctx.state != "running") {
                 Howler.ctx.resume();
             }
-            //console.log(e.keyCode);
-            if(keyboard.switchSoundPackCheck(e.keyCode)){
-                // do nothing
-                keyboard.playKey(e.keyCode);
+
+            var code = thisObj.getEventCode(e);
+            var noModifiers = !(e.ctrlKey || e.metaKey || e.altKey || e.shiftKey);
+            var isChainCode = ["ArrowLeft", "ArrowUp", "ArrowDown", "ArrowRight"].indexOf(code) != -1;
+            if(noModifiers && isChainCode){
+                thisObj.releaseActiveKeyboardPads(keyboard);
+                keyboard.switchSoundPackCheck(code);
+                e.preventDefault();
+                return;
             }
-            else{
-                if(!(e.ctrlKey || e.metaKey)){
-                    // var keyInd = keyPairs.indexOf(e.keyCode);
-                    // if(keyInd == -1)
-                    //     keyInd = backupPairs.indexOf(e.keyCode);
-                    var keyInd = keyboard.getKeyInd(e.keyCode);
-                    // console.log(keyInd);
-                    // console.log(e.keyCode);
-                    // console.log($(".button-"+(keyInd)+"").attr("released"));
-                    if($(".button-"+(keyInd)+"").attr("released") == "true"){
-                        keyboard.playKey(e.keyCode);
-                    }
-                    e.preventDefault();
+
+            if(e.ctrlKey || e.metaKey || e.altKey)
+                return;
+
+            var padIndex = Keyboard_Layout_Space.getPadIndex(thisObj.currentLayoutId, code);
+            if(padIndex != -1){
+                if(!e.repeat && !thisObj.activePadByCode.hasOwnProperty(code)){
+                    thisObj.activePadByCode[code] = padIndex;
+                    keyboard.pressPad(padIndex);
                 }
+                e.preventDefault();
             }
         });
         
         $(document).keyup(function(e){
-            if(keyboard.switchSoundPackCheck(e.keyCode)){
-                // do nothing
-                keyboard.releaseKey(e.keyCode);
-            }
-            else{
-                if(!(e.ctrlKey || e.metaKey)){
-                    // var keyInd = keyPairs.indexOf(e.keyCode);
-                    // if(keyInd == -1)
-                    //     keyInd = backupPairs.indexOf(e.keyCode);
-                    keyboard.releaseKey(e.keyCode);
-                }
+            var code = thisObj.getEventCode(e);
+            if(thisObj.activePadByCode.hasOwnProperty(code)){
+                keyboard.releasePad(thisObj.activePadByCode[code]);
+                delete thisObj.activePadByCode[code];
+                e.preventDefault();
             }
         });
-    }
-    
-    KeyboardUI.prototype.getKeyInd = function(kc){
-        var keyInd = keyPairs.indexOf(kc);
-        if(keyInd == -1)
-            keyInd = backupPairs.indexOf(kc);
-            
-        return keyInd;
     }
     
     var loaded = false;
