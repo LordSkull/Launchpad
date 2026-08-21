@@ -3,6 +3,7 @@
 
 require 'json'
 require 'fileutils'
+require_relative '../lib/audio_sample'
 
 PAD_COUNT = 48
 CHAINS = (1..4).map { |n| "chain#{n}" }.freeze
@@ -162,8 +163,8 @@ class SongManifest
           errors << "mappings.#{chain}[#{i}] must be a string"
           next
         end
-        if sample.include?('/') || sample.include?('\\') || sample.downcase.end_with?('.mp3')
-          errors << "mappings.#{chain}[#{i}] must be a sample basename only (example: kick, not path/kick.mp3)"
+        if sample.include?('/') || sample.include?('\\')
+          errors << "mappings.#{chain}[#{i}] must be a sample filename only (example: kick.wav, not path/kick.wav)"
         end
       end
     end
@@ -234,15 +235,17 @@ class SongManifest
       next unless arr.is_a?(Array)
       arr.each_with_index do |sample, pad|
         next unless sample.is_a?(String) && !sample.empty?
-        expected = "sounds/chain#{idx + 1}/#{sample}.mp3"
+        expected = "sounds/chain#{idx + 1}/#{AudioSample.resolve_filename(sample)}"
         used << expected
         errors << "Missing ZIP entry for #{chain} pad #{pad} (#{KEY_LABELS[pad]}): #{expected}" unless files.include?(expected)
       end
     end
 
-    mp3s = files.select { |e| e.match?(/\Asounds\/chain[1-4]\/.*\.mp3\z/) }
-    unused = mp3s - used
-    warnings << "#{unused.length} MP3 file(s) in the ZIP are not mapped to any pad" if unused.any?
+    audio_files = files.select do |entry|
+      entry.match?(/\Asounds\/chain[1-4]\//) && AudioSample.supported?(entry)
+    end
+    unused = audio_files - used
+    warnings << "#{unused.length} supported audio file(s) in the ZIP are not mapped to any pad" if unused.any?
 
     junk = files.select { |e| e.start_with?('__MACOSX/') || File.basename(e) == '.DS_Store' }
     warnings << "ZIP contains #{junk.length} macOS metadata file(s); harmless, but removable" if junk.any?

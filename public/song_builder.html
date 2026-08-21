@@ -38,7 +38,7 @@
 <body>
 <main>
   <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap"><div><h1>Launchpad — Add Song</h1><a href="/" data-turbolinks="false" onclick="window.location.href='/'; return false;">← Back to Launchpad</a></div><a href="/manage_songs.html" data-turbolinks="false">Manage Songs</a></div>
-  <p>Choose a Launchpad-format ZIP, map its MP3 samples to the 48 pads of each chain, validate it, then install it into <code>user_data/songs/</code>. No source-code edit is required.</p>
+  <p>Choose a Launchpad-format ZIP, map its MP3/WAV samples to the 48 pads of each chain, validate it, then install it into <code>user_data/songs/</code>. No source-code edit is required.</p>
 
   <section class="panel">
     <h2>1. Song metadata</h2>
@@ -89,6 +89,7 @@
     <p class="muted"><strong>Install Song</strong> is development-only. The server validates the package again before writing anything to user_data.</p>
   </section>
 
+  <script src="/assets/audioSamples.js"></script>
   <script src="/song_builder.js"></script>
 </main>
 </body>

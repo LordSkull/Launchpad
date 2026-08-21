@@ -43,20 +43,22 @@ var Keyboard_Space = new function(){
     // if online version, gets from public folder
     Keyboard.prototype.requestSound = function(i, srcArr, soundArr, chain){
         var thisObj = this;
+        var sampleFilename = Audio_Sample_Space.resolveFilename(srcArr[i]);
+        var samplePath = 'sounds/chain'+chain+'/'+sampleFilename;
         soundArr[i] = new Howl({
             // for online version
-            urls: [Zip_Space.dataArray['sounds/chain'+chain+'/'+srcArr[i]+'.mp3']],
+            urls: [Zip_Space.dataArray[samplePath]],
             // old
             // urls: [currentSongData["soundUrls"]["chain"+chain][srcArr[i]].replace("www.dropbox.com","dl.dropboxusercontent.com").replace("?dl=0","")],
             // for offline version
-            // urls: ["audio/chain"+chain+"/"+srcArr[i]+".mp3"],
+            // urls: ["audio/chain"+chain+"/"+sampleFilename],
             onload: function(){
                 thisObj.checkLoaded();
             },
             onloaderror: function(id, error){
                 console.log('error: '+id)
                 console.log(error);
-                console.log('sounds/chain'+chain+'/'+srcArr[i]+'.mp3');
+                console.log(samplePath);
                 $("#error_msg").html("There was an error. Please try clearing your browser's cache and reload the page.");
             }
         });
