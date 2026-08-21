@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module AudioSample
-  SUPPORTED_EXTENSIONS = %w[.mp3 .wav].freeze
+  SUPPORTED_EXTENSIONS = %w[.mp3 .wav .ogg].freeze
 
   def self.supported?(filename)
     SUPPORTED_EXTENSIONS.include?(File.extname(filename.to_s).downcase)

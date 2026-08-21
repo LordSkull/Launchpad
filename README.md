@@ -15,7 +15,7 @@ Launchpad è un'applicazione web che simula un controller Launchpad direttamente
 
 - Launchpad virtuale utilizzabile direttamente dal browser
 - Controllo tramite tastiera e mouse
-- Riproduzione audio MP3/WAV tramite Howler.js
+- Riproduzione audio MP3/WAV/OGG tramite Howler.js
 - Supporto a 4 chain da 48 pad ciascuna
 - Sound pack built-in
 - Aggiunta di nuove canzoni tramite Song Builder
@@ -163,6 +163,7 @@ sounds/
 ├── chain1/
 │   ├── kick.wav
 │   ├── vocal.mp3
+│   ├── synth.ogg
 │   └── ...
 ├── chain2/
 │   ├── snare.wav
@@ -181,8 +182,9 @@ Il Song Builder permette poi di associare ogni file al pad desiderato.
 
 - MP3 (`.mp3`)
 - WAV (`.wav`)
+- OGG/Vorbis (`.ogg`)
 
-Le estensioni vengono riconosciute senza distinzione tra maiuscole e minuscole. Le nuove song conservano nel mapping il nome completo del sample, ad esempio `kick.wav` o `vocal.mp3`. I manifest legacy che usano mapping senza estensione restano compatibili e continuano a essere interpretati come sample MP3.
+Le estensioni vengono riconosciute senza distinzione tra maiuscole e minuscole. Le nuove song conservano nel mapping il nome completo del sample, ad esempio `kick.wav`, `vocal.mp3` o `synth.ogg`. I manifest legacy che usano mapping senza estensione restano compatibili: ad esempio, `kick` continua a essere interpretato come `kick.mp3`.
 
 ---
 

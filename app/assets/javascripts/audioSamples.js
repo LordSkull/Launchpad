@@ -1,8 +1,9 @@
 var Audio_Sample_Space = new function(){
-    var supportedExtensions = ['.mp3', '.wav'];
+    var supportedExtensions = ['.mp3', '.wav', '.ogg'];
     var mimeTypes = {
         '.mp3': 'audio/mp3',
-        '.wav': 'audio/wav'
+        '.wav': 'audio/wav',
+        '.ogg': 'audio/ogg'
     };
 
     this.supportedExtensions = supportedExtensions.slice();

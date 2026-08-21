@@ -8,9 +8,14 @@ class SongManifestTest < ActiveSupport::TestCase
     assert_equal 'kick.mp3', AudioSample.resolve_filename('kick')
     assert_equal 'kick.wav', AudioSample.resolve_filename('kick.wav')
     assert_equal 'vocal.mp3', AudioSample.resolve_filename('vocal.mp3')
+    assert_equal 'synth.ogg', AudioSample.resolve_filename('synth.ogg')
     assert_equal 'SAMPLE.WAV', AudioSample.resolve_filename('SAMPLE.WAV')
     assert_equal 'voice.MP3', AudioSample.resolve_filename('voice.MP3')
+    assert_equal 'SYNTH.OGG', AudioSample.resolve_filename('SYNTH.OGG')
+    assert AudioSample.supported?('kick.ogg')
     refute AudioSample.supported?('notes.txt')
+    refute AudioSample.supported?('kick.flac')
+    assert_equal 'kick.flac.mp3', AudioSample.resolve_filename('kick.flac')
   end
 
   test 'valid minimal manifest is accepted' do
@@ -80,13 +85,22 @@ class SongManifestTest < ActiveSupport::TestCase
     end
   end
 
-  test 'mixed mp3 and wav mappings are accepted' do
+  test 'ogg mapping is accepted' do
     Dir.mktmpdir do |root|
-      data = manifest_with_samples('kick.wav', 'vocal.mp3')
+      data = manifest_with_samples('synth.ogg')
+      manifest = build_manifest(root, data, entries: ['sounds/chain1/synth.ogg'])
+
+      assert manifest.valid?, manifest.errors.inspect
+    end
+  end
+
+  test 'mixed mp3 wav and ogg mappings are accepted' do
+    Dir.mktmpdir do |root|
+      data = manifest_with_samples('kick.wav', 'vocal.mp3', 'synth.ogg')
       manifest = build_manifest(
         root,
         data,
-        entries: ['sounds/chain1/kick.wav', 'sounds/chain1/vocal.mp3']
+        entries: ['sounds/chain1/kick.wav', 'sounds/chain1/vocal.mp3', 'sounds/chain1/synth.ogg']
       )
 
       assert manifest.valid?, manifest.errors.inspect
@@ -95,11 +109,11 @@ class SongManifestTest < ActiveSupport::TestCase
 
   test 'supported audio extensions are recognized case insensitively' do
     Dir.mktmpdir do |root|
-      data = manifest_with_samples('SAMPLE.WAV', 'voice.MP3')
+      data = manifest_with_samples('SAMPLE.WAV', 'voice.MP3', 'SYNTH.OGG')
       manifest = build_manifest(
         root,
         data,
-        entries: ['sounds/chain1/SAMPLE.WAV', 'sounds/chain1/voice.MP3']
+        entries: ['sounds/chain1/SAMPLE.WAV', 'sounds/chain1/voice.MP3', 'sounds/chain1/SYNTH.OGG']
       )
 
       assert manifest.valid?, manifest.errors.inspect
@@ -123,6 +137,21 @@ class SongManifestTest < ActiveSupport::TestCase
 
       refute manifest.valid?
       assert manifest.errors.any? { |error| error.include?('missing.wav') }
+    end
+  end
+
+  test 'missing ogg entry is rejected and a real flac entry remains unsupported' do
+    Dir.mktmpdir do |root|
+      data = manifest_with_samples('missing.ogg', 'kick.flac')
+      manifest = build_manifest(
+        root,
+        data,
+        entries: ['sounds/chain1/other.ogg', 'sounds/chain1/kick.flac']
+      )
+
+      refute manifest.valid?
+      assert manifest.errors.any? { |error| error.include?('missing.ogg') }
+      assert manifest.errors.any? { |error| error.include?('kick.flac.mp3') }
     end
   end
 
