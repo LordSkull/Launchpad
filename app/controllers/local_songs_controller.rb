@@ -97,11 +97,34 @@ class LocalSongsController < ApplicationController
   # Built-in ZIPs are served directly from public/. User ZIPs fall through
   # to this route and are read from user_data/songs/<filename>/sounds.zip.
   def zip
-    path = store.zip_path(params[:filename].to_s)
-    send_file path, type: 'application/zip', disposition: 'inline'
+    body = store.open_zip(params[:filename].to_s)
+    handed_off = false
+
+    send_file_headers!(
+      type: 'application/zip',
+      disposition: 'inline',
+      filename: 'sounds.zip'
+    )
+    response.headers['Content-Length'] = body.size.to_s
+    response.headers['Last-Modified'] = body.last_modified.httpdate
+    response.headers['Cache-Control'] = 'no-cache'
+
+    if request.head?
+      body.close
+      self.response_body = []
+    else
+      request.env['rack.response_finished'] ||= []
+      request.env['rack.response_finished'] << proc do |_env, _status, _headers, _error|
+        body.close
+      end
+      self.response_body = body
+      handed_off = true
+    end
   rescue StandardError => e
     Rails.logger.warn("User song ZIP not found: #{e.message}")
     head :not_found
+  ensure
+    body.close if defined?(body) && body && !handed_off
   end
 
   private
