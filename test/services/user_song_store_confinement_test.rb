@@ -2,6 +2,7 @@ require 'test_helper'
 require 'tmpdir'
 require 'json'
 require 'fileutils'
+require 'minitest/mock'
 require Rails.root.join('script', 'song_store').to_s
 
 class UserSongStoreConfinementTest < ActiveSupport::TestCase
@@ -82,6 +83,23 @@ class UserSongStoreConfinementTest < ActiveSupport::TestCase
     assert File.symlink?(songs_link)
   end
 
+  test 'initialization rejects a symlink ancestor before creating the songs root through it' do
+    outside_user_data = File.join(@outside_root, 'outside_user_data')
+    FileUtils.mkdir_p(outside_user_data)
+    user_data_link = File.join(@repo_root, 'user_data')
+
+    begin
+      File.symlink(outside_user_data, user_data_link)
+    rescue NotImplementedError, Errno::EACCES, Errno::EPERM
+      skip 'Symlink creation is unavailable on this platform'
+    end
+
+    error = assert_raises(RuntimeError) { UserSongStore.new(@repo_root) }
+
+    assert_match(/Unsafe song storage path/, error.message)
+    refute File.exist?(File.join(outside_user_data, 'songs'))
+  end
+
   test 'zip path rejects both a symlink file and a symlink song directory' do
     store = UserSongStore.new(@repo_root)
     song_dir = File.join(store.songs_root, 'test_song')
@@ -155,6 +173,31 @@ class UserSongStoreConfinementTest < ActiveSupport::TestCase
     assert_equal 'external list zip', File.read(outside_zip, encoding: 'UTF-8')
   end
 
+  test 'list rejects a manifest replaced between pathname validation and open' do
+    store = UserSongStore.new(@repo_root)
+    song_dir = File.join(store.songs_root, 'replace_manifest')
+    write_song(song_dir, song_name: 'Original Song', include_zip: true)
+    manifest_path = File.join(song_dir, 'song.json')
+    outside_manifest = File.join(@outside_root, 'replacement-manifest.json')
+    File.write(outside_manifest, JSON.generate('song_name' => 'Outside Song'), mode: 'w', encoding: 'UTF-8')
+    original_open = File.method(:open)
+    replaced = false
+    replacing_open = proc do |path, *args, **kwargs, &block|
+      if path == manifest_path && !replaced
+        File.unlink(manifest_path)
+        File.symlink(outside_manifest, manifest_path)
+        replaced = true
+      end
+      original_open.call(path, *args, **kwargs, &block)
+    end
+
+    songs = File.stub(:open, replacing_open) { store.list }
+
+    assert replaced
+    assert_empty songs
+    assert_equal 'Outside Song', JSON.parse(File.read(outside_manifest, encoding: 'UTF-8'))['song_name']
+  end
+
   test 'zip path rejects missing songs missing zip files and directories named sounds zip' do
     store = UserSongStore.new(@repo_root)
 
@@ -177,6 +220,52 @@ class UserSongStoreConfinementTest < ActiveSupport::TestCase
     error = assert_raises(RuntimeError) { store.zip_path('../evil') }
 
     assert_match(/Invalid song filename/, error.message)
+  end
+
+  test 'remove unlinks a dangling terminal song symlink' do
+    store = UserSongStore.new(@repo_root)
+    missing_target = File.join(@outside_root, 'missing_target')
+    song_link = File.join(store.songs_root, 'dangling_song')
+    File.symlink(missing_target, song_link)
+
+    assert_equal true, store.remove!('dangling_song')
+    refute File.symlink?(song_link)
+    refute File.exist?(missing_target)
+  end
+
+  test 'remove does not follow a nested symlink outside the song directory' do
+    store = UserSongStore.new(@repo_root)
+    outside_directory = File.join(@outside_root, 'nested_target')
+    marker_path = write_marker(outside_directory)
+    song_dir = File.join(store.songs_root, 'nested_song')
+    FileUtils.mkdir_p(song_dir)
+    File.write(File.join(song_dir, 'local.txt'), 'local', mode: 'w', encoding: 'UTF-8')
+    File.symlink(outside_directory, File.join(song_dir, 'outside_link'))
+
+    assert_equal true, store.remove!('nested_song')
+
+    refute File.exist?(song_dir)
+    assert_equal 'outside marker', File.read(marker_path, encoding: 'UTF-8')
+  end
+
+  test 'remove uses secure recursive deletion for a normal directory' do
+    store = UserSongStore.new(@repo_root)
+    song_dir = File.join(store.songs_root, 'secure_remove')
+    FileUtils.mkdir_p(song_dir)
+    File.write(File.join(song_dir, 'local.txt'), 'local', mode: 'w', encoding: 'UTF-8')
+    original_remove = FileUtils.method(:remove_entry_secure)
+    called = false
+    secure_remove = proc do |path, force = false|
+      called = true
+      original_remove.call(path, force)
+    end
+
+    FileUtils.stub(:remove_entry_secure, secure_remove) do
+      assert_equal true, store.remove!('secure_remove')
+    end
+
+    assert called
+    refute File.exist?(song_dir)
   end
 
   private

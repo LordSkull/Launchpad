@@ -188,6 +188,28 @@ class LocalSongsApiCharacterizationTest < ActionDispatch::IntegrationTest
     assert_guard_unchanged
   end
 
+  test 'destroy does not allow a malformed catalog entry to alias a valid sibling' do
+    install_song(valid_manifest(filename: 'victim', song_name: 'Victim', song_number: 46))
+    malformed_dir = File.join(@store.songs_root, ' victim')
+    FileUtils.mkdir_p(malformed_dir)
+    File.write(
+      File.join(malformed_dir, 'song.json'),
+      JSON.generate('song_name' => 'Malformed Alias'),
+      mode: 'w',
+      encoding: 'UTF-8'
+    )
+    File.write(File.join(malformed_dir, 'sounds.zip'), 'malformed zip', mode: 'w', encoding: 'UTF-8')
+
+    with_local_api do
+      delete '/dev/song_imports/%20victim'
+    end
+
+    assert_response :not_found
+    assert File.directory?(File.join(@store.songs_root, 'victim'))
+    assert File.directory?(malformed_dir)
+    assert_guard_unchanged
+  end
+
   test 'zip returns the installed archive byte for byte' do
     zip_path = install_song(valid_manifest(filename: 'zip_song', song_name: 'ZIP Song', song_number: 45))
     expected_bytes = File.binread(zip_path)

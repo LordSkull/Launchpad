@@ -61,7 +61,11 @@ class UserSongStoreTest < ActiveSupport::TestCase
       store.install!(manifest)
       song_dir = File.join(store.songs_root, 'test_song')
 
-      ['../evil', '../../evil', 'foo/bar', 'foo\\bar'].each do |filename|
+      [
+        '', ' name', 'name ', '../outside', '../../outside', '/outside',
+        'C:\\outside', 'C:/outside', '\\\\server\\share', 'foo/bar',
+        'foo\\bar', '.', '..', '...', '%2e%2e', 'é', '.hidden'
+      ].each do |filename|
         assert_raises(RuntimeError, "Expected #{filename.inspect} to be rejected") do
           store.remove!(filename)
         end
@@ -69,6 +73,29 @@ class UserSongStoreTest < ActiveSupport::TestCase
         assert File.directory?(song_dir), "Expected the installed song to survive #{filename.inspect}"
         assert_equal 'outside marker', File.read(marker_path, encoding: 'UTF-8')
       end
+    end
+  end
+
+  test 'catalog ignores malformed component names' do
+    Dir.mktmpdir do |root|
+      store = UserSongStore.new(root)
+      write_store_entry(store, 'normal_song', JSON.generate('song_name' => 'Normal Song'))
+      write_store_entry(store, ' malformed', JSON.generate('song_name' => 'Malformed Song'))
+
+      assert_equal ['normal_song'], store.list.map { |song| song['filename'] }
+    end
+  end
+
+  test 'leading whitespace identifier cannot alias and remove a valid sibling' do
+    Dir.mktmpdir do |root|
+      store = UserSongStore.new(root)
+      victim_dir = File.join(store.songs_root, 'victim')
+      write_store_entry(store, 'victim', JSON.generate('song_name' => 'Victim'))
+      write_store_entry(store, ' victim', JSON.generate('song_name' => 'Malformed Alias'))
+
+      assert_raises(RuntimeError) { store.remove!(' victim') }
+      assert File.directory?(victim_dir)
+      assert_equal 'Victim', JSON.parse(File.read(File.join(victim_dir, 'song.json')))['song_name']
     end
   end
 
