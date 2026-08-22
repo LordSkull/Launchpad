@@ -50,11 +50,61 @@ class UserSongStoreInstallAtomicityTest < ActiveSupport::TestCase
     assert_sibling_unchanged
   end
 
+  test 'install does not reuse a predictable pre-existing staging directory or its symlink leaves' do
+    predictable_path = File.join(
+      @store.songs_root,
+      ".test_song.tmp-#{Process.pid}-123456"
+    )
+    FileUtils.mkdir_p(predictable_path)
+    outside_manifest = File.join(@temporary_root, 'outside-manifest.json')
+    outside_zip = File.join(@temporary_root, 'outside-sounds.zip')
+    File.write(outside_manifest, 'outside manifest', mode: 'w', encoding: 'UTF-8')
+    File.write(outside_zip, 'outside zip', mode: 'w', encoding: 'UTF-8')
+    File.symlink(outside_manifest, File.join(predictable_path, 'song.json'))
+    File.symlink(outside_zip, File.join(predictable_path, 'sounds.zip'))
+
+    @store.stub(:rand, 123456) { @store.install!(@manifest) }
+
+    assert_equal 'outside manifest', File.read(outside_manifest, encoding: 'UTF-8')
+    assert_equal 'outside zip', File.read(outside_zip, encoding: 'UTF-8')
+    assert File.symlink?(File.join(predictable_path, 'song.json'))
+    assert File.symlink?(File.join(predictable_path, 'sounds.zip'))
+    assert_equal %w[song.json sounds.zip], Dir.children(destination_path).sort
+  end
+
+  test 'exclusive staged leaf creation rejects injected symlinks without touching their targets' do
+    %w[song.json sounds.zip].each do |leaf|
+      outside_path = File.join(@temporary_root, "outside-#{leaf}")
+      File.write(outside_path, "outside #{leaf}", mode: 'w', encoding: 'UTF-8')
+      staging_path = File.join(@store.songs_root, ".injected-#{leaf.tr('.', '-')}")
+      staging_factory = proc do |_prefix_suffix, parent, **_options|
+        assert_equal @store.songs_root, parent
+        Dir.mkdir(staging_path)
+        File.symlink(outside_path, File.join(staging_path, leaf))
+        staging_path
+      end
+
+      Dir.stub(:mktmpdir, staging_factory) do
+        assert_raises(Errno::EEXIST) { @store.install!(@manifest) }
+      end
+
+      assert_equal "outside #{leaf}", File.read(outside_path, encoding: 'UTF-8')
+      refute File.exist?(destination_path)
+      refute File.exist?(staging_path)
+    end
+  end
+
   test 'manifest write failure propagates and removes the temp directory' do
-    write_failure = proc { |_path, *_args, **_kwargs| raise IOError, 'simulated manifest write failure' }
+    original_open = File.method(:open)
+    write_failure = proc do |path, *args, **kwargs, &block|
+      if File.basename(path) == 'song.json' && args.first.is_a?(Integer) && (args.first & File::EXCL) != 0
+        raise IOError, 'simulated manifest write failure'
+      end
+      original_open.call(path, *args, **kwargs, &block)
+    end
 
     error = assert_raises(IOError) do
-      File.stub(:write, write_failure) { @store.install!(@manifest) }
+      File.stub(:open, write_failure) { @store.install!(@manifest) }
     end
 
     assert_equal 'simulated manifest write failure', error.message
@@ -67,12 +117,12 @@ class UserSongStoreInstallAtomicityTest < ActiveSupport::TestCase
   test 'zip copy failure occurs after manifest write and removes the temp directory' do
     manifest_was_written = false
     copy_failure = proc do |_source, destination, *_args, **_kwargs|
-      manifest_was_written = File.file?(File.join(File.dirname(destination), 'song.json'))
+      manifest_was_written = File.file?(File.join(File.dirname(destination.path), 'song.json'))
       raise IOError, 'simulated zip copy failure'
     end
 
     error = assert_raises(IOError) do
-      FileUtils.stub(:cp, copy_failure) { @store.install!(@manifest) }
+      IO.stub(:copy_stream, copy_failure) { @store.install!(@manifest) }
     end
 
     assert_equal 'simulated zip copy failure', error.message
@@ -109,7 +159,7 @@ class UserSongStoreInstallAtomicityTest < ActiveSupport::TestCase
   end
 
   test 'a destination created before publication causes an error and is preserved' do
-    original_copy = FileUtils.method(:cp)
+    original_copy = IO.method(:copy_stream)
     move_called = false
     concurrent_marker = File.join(destination_path, 'concurrent.txt')
     racing_copy = proc do |source, destination, *args, **kwargs|
@@ -121,7 +171,7 @@ class UserSongStoreInstallAtomicityTest < ActiveSupport::TestCase
 
     result = nil
     error = assert_raises(RuntimeError) do
-      FileUtils.stub(:cp, racing_copy) do
+      IO.stub(:copy_stream, racing_copy) do
         FileUtils.stub(:mv, move_probe) { result = @store.install!(@manifest) }
       end
     end
@@ -154,6 +204,35 @@ class UserSongStoreInstallAtomicityTest < ActiveSupport::TestCase
     assert_sibling_unchanged
   end
 
+  test 'a dangling symlink at the install lock path is rejected and retained' do
+    missing_target = File.join(@temporary_root, 'missing-install.lock')
+    File.symlink(missing_target, lock_path)
+
+    error = assert_raises(RuntimeError) { @store.install!(@manifest) }
+
+    assert_match(/Unsafe song storage path/, error.message)
+    assert File.symlink?(lock_path)
+    refute File.exist?(missing_target)
+    refute File.exist?(destination_path)
+  end
+
+  test 'a missing install lock is created with exclusive creation semantics' do
+    observed_flags = nil
+    original_open = File.method(:open)
+    open_probe = proc do |path, *args, **kwargs, &block|
+      if path == lock_path && observed_flags.nil?
+        observed_flags = args.first
+      end
+      original_open.call(path, *args, **kwargs, &block)
+    end
+
+    File.stub(:open, open_probe) { @store.install!(@manifest) }
+
+    assert observed_flags & File::EXCL, 'Expected initial lock creation to use File::EXCL'
+    assert File.file?(lock_path)
+    assert_install_lock_available
+  end
+
   test 'list hides incomplete and complete orphan temp directories' do
     empty_temp = create_orphan_temp('.test_song.tmp-123-1', manifest: false, zip: false)
     manifest_temp = create_orphan_temp('.test_song.tmp-123-2', manifest: true, zip: false)
@@ -174,12 +253,12 @@ class UserSongStoreInstallAtomicityTest < ActiveSupport::TestCase
     second_manifest = build_valid_manifest('second_song')
     first_store = UserSongStore.new(@temporary_root)
     second_store = UserSongStore.new(@temporary_root)
-    original_copy = FileUtils.method(:cp)
+    original_copy = IO.method(:copy_stream)
     first_copy_started = Queue.new
     release_first_copy = Queue.new
     second_install_started = Queue.new
     copy_with_barrier = proc do |source, destination, *args, **kwargs|
-      if source == first_manifest.zip_path
+      if source.respond_to?(:path) && source.path == first_manifest.zip_path
         first_copy_started << true
         release_first_copy.pop
       end
@@ -189,7 +268,7 @@ class UserSongStoreInstallAtomicityTest < ActiveSupport::TestCase
     second_result = nil
     lock_was_held = nil
 
-    FileUtils.stub(:cp, copy_with_barrier) do
+    IO.stub(:copy_stream, copy_with_barrier) do
       first_thread = Thread.new { first_store.install!(first_manifest) }
       first_copy_started.pop
 
@@ -231,7 +310,7 @@ class UserSongStoreInstallAtomicityTest < ActiveSupport::TestCase
   end
 
   def temp_name_pattern
-    /\A\.(?:test_song|first_song|second_song)\.tmp-\d+-\d+\z/
+    /\A\.(?:test_song|first_song|second_song)\.tmp-/
   end
 
   def temp_directories

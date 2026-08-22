@@ -2,6 +2,7 @@
 
 require 'json'
 require 'fileutils'
+require 'tmpdir'
 
 class UserSongStore
   attr_reader :repo_root, :songs_root
@@ -9,7 +10,7 @@ class UserSongStore
   def initialize(repo_root)
     @repo_root = File.expand_path(repo_root)
     @songs_root = File.join(@repo_root, 'user_data', 'songs')
-    FileUtils.mkdir_p(@songs_root)
+    create_safe_root!
     ensure_safe_root!
   end
 
@@ -18,6 +19,7 @@ class UserSongStore
 
     Dir.entries(songs_root).sort.each_with_object([]) do |entry, songs|
       next if entry == '.' || entry == '..' || entry.start_with?('.')
+      next unless valid_filename?(entry)
       song_dir = File.join(songs_root, entry)
       next unless safe_real_path?(song_dir, real_root, :directory)
 
@@ -28,7 +30,9 @@ class UserSongStore
       next unless safe_real_path?(zip_path, real_root, :file)
 
       begin
-        data = JSON.parse(File.read(manifest_path, encoding: 'UTF-8'))
+        data = open_verified_regular_file(manifest_path, real_root) do |manifest_file|
+          JSON.parse(manifest_file.read)
+        end
         next unless data.is_a?(Hash)
 
         data['filename'] = entry
@@ -66,7 +70,7 @@ class UserSongStore
     end
 
     ensure_safe_root!
-    FileUtils.rm_rf(target_dir)
+    FileUtils.remove_entry_secure(target_dir, true)
     true
   end
 
@@ -131,15 +135,18 @@ class UserSongStore
     data['filename'] = filename
     data['user_installed'] = true
 
-    tmp_dir = File.join(songs_root, ".#{filename}.tmp-#{Process.pid}-#{rand(1_000_000)}")
-    FileUtils.mkdir_p(tmp_dir)
+    tmp_dir = Dir.mktmpdir(".#{filename}.tmp-", songs_root)
 
     begin
       real_root = ensure_safe_root!
       raise 'Unsafe song storage path.' unless safe_real_path?(tmp_dir, real_root, :directory)
 
-      File.write(File.join(tmp_dir, 'song.json'), JSON.pretty_generate(data) + "\n", mode: 'w', encoding: 'UTF-8')
-      FileUtils.cp(manifest.zip_path, File.join(tmp_dir, 'sounds.zip'))
+      create_exclusive_file(File.join(tmp_dir, 'song.json')) do |manifest_file|
+        manifest_file.write(JSON.pretty_generate(data) + "\n")
+      end
+      create_exclusive_file(File.join(tmp_dir, 'sounds.zip')) do |zip_file|
+        File.open(manifest.zip_path, 'rb') { |source| IO.copy_stream(source, zip_file) }
+      end
 
       real_root = ensure_safe_root!
       raise 'Unsafe song storage path.' unless safe_real_path?(tmp_dir, real_root, :directory)
@@ -147,7 +154,7 @@ class UserSongStore
 
       FileUtils.mv(tmp_dir, target_dir)
     rescue StandardError
-      FileUtils.rm_rf(tmp_dir)
+      remove_entry_secure(tmp_dir)
       raise
     end
 
@@ -162,21 +169,85 @@ class UserSongStore
   def with_install_lock
     real_root = ensure_safe_root!
     lock_path = File.join(songs_root, '.install.lock')
-    lock_stat = lstat(lock_path)
-    if lock_stat && (lock_stat.symlink? || !lock_stat.file? || !safe_real_path?(lock_path, real_root, :file))
-      raise 'Unsafe song storage path.'
-    end
-
-    File.open(lock_path, File::RDWR | File::CREAT, 0o600) do |lock|
+    lock = open_install_lock(lock_path, real_root)
+    begin
       lock.flock(File::LOCK_EX)
       begin
         real_root = ensure_safe_root!
-        raise 'Unsafe song storage path.' unless safe_real_path?(lock_path, real_root, :file)
+        lock_stat = lstat(lock_path)
+        unless safe_regular_entry?(lock_path, real_root, lock_stat) && same_file?(lock_stat, lock.stat)
+          raise 'Unsafe song storage path.'
+        end
         yield
       ensure
         lock.flock(File::LOCK_UN)
       end
+    ensure
+      lock.close
     end
+  end
+
+  def open_install_lock(lock_path, real_root)
+    loop do
+      lock_stat = lstat(lock_path)
+      if lock_stat
+        raise 'Unsafe song storage path.' unless safe_regular_entry?(lock_path, real_root, lock_stat)
+
+        lock = File.open(lock_path, File::RDWR)
+        unless same_file?(lock_stat, lock.stat)
+          lock.close
+          raise 'Unsafe song storage path.'
+        end
+        return lock
+      end
+
+      begin
+        lock = File.open(lock_path, File::RDWR | File::CREAT | File::EXCL, 0o600)
+        created_stat = lstat(lock_path)
+        unless safe_regular_entry?(lock_path, real_root, created_stat) && same_file?(created_stat, lock.stat)
+          lock.close
+          raise 'Unsafe song storage path.'
+        end
+        return lock
+      rescue Errno::EEXIST
+        next
+      end
+    end
+  rescue SystemCallError
+    lock.close if defined?(lock) && lock && !lock.closed?
+    raise 'Unsafe song storage path.'
+  end
+
+  def create_safe_root!
+    missing = []
+    path = songs_root
+
+    while lstat(path).nil?
+      missing << path
+      parent = File.dirname(path)
+      raise 'Unsafe song storage path.' if parent == path
+      path = parent
+    end
+
+    ensure_safe_existing_directory!(path)
+    missing.reverse_each do |directory|
+      begin
+        Dir.mkdir(directory)
+      rescue Errno::EEXIST
+        # Another cooperative initializer may have created it.
+      end
+      ensure_safe_existing_directory!(directory)
+    end
+  end
+
+  def ensure_safe_existing_directory!(path)
+    path_stat = File.lstat(path)
+    expected = File.expand_path(path)
+    unless path_stat.directory? && !path_stat.symlink? && File.realpath(path) == expected
+      raise 'Unsafe song storage path.'
+    end
+  rescue SystemCallError
+    raise 'Unsafe song storage path.'
   end
 
   def ensure_safe_root!
@@ -204,6 +275,40 @@ class UserSongStore
     false
   end
 
+  def safe_regular_entry?(path, real_root, path_stat)
+    path_stat && !path_stat.symlink? && path_stat.file? &&
+      File.realpath(path).start_with?(real_root + File::SEPARATOR)
+  rescue SystemCallError
+    false
+  end
+
+  def same_file?(expected_stat, actual_stat)
+    expected_stat && actual_stat && expected_stat.file? && actual_stat.file? &&
+      expected_stat.dev == actual_stat.dev && expected_stat.ino == actual_stat.ino
+  end
+
+  def open_verified_regular_file(path, real_root)
+    expected_stat = lstat(path)
+    return nil unless safe_regular_entry?(path, real_root, expected_stat)
+
+    File.open(path, File::RDONLY, encoding: 'UTF-8') do |file|
+      return nil unless same_file?(expected_stat, file.stat)
+      yield file
+    end
+  rescue SystemCallError
+    nil
+  end
+
+  def create_exclusive_file(path)
+    File.open(path, File::WRONLY | File::CREAT | File::EXCL, 0o600) do |file|
+      yield file
+    end
+  end
+
+  def remove_entry_secure(path)
+    FileUtils.remove_entry_secure(path, true) if path_entry_exists?(path)
+  end
+
   def path_entry_exists?(path)
     !lstat(path).nil?
   end
@@ -215,11 +320,15 @@ class UserSongStore
   end
 
   def normalize_filename(value)
-    filename = value.to_s.strip
-    unless filename.match?(/\A[A-Za-z0-9_-]+\z/)
+    filename = value.to_s
+    unless valid_filename?(filename)
       raise "Invalid song filename '#{filename}'."
     end
     filename
+  end
+
+  def valid_filename?(value)
+    value.is_a?(String) && value.match?(/\A[A-Za-z0-9_-]+\z/)
   end
 
   def built_in_song_numbers
