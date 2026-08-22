@@ -6,7 +6,9 @@ require 'fileutils'
 require_relative '../lib/audio_sample'
 
 PAD_COUNT = 48
-CHAINS = (1..4).map { |n| "chain#{n}" }.freeze
+MIN_CHAIN_COUNT = 4
+MAX_CHAIN_COUNT = 8
+LEGACY_CHAIN_COUNT = 4
 KEY_LABELS = [
   '1','2','3','4','5','6','7','8','9','0','-','=',
   'Q','W','E','R','T','Y','U','I','O','P','[',']',
@@ -83,6 +85,7 @@ class SongManifest
     return self unless errors.empty?
 
     validate_metadata
+    validate_chain_count
     validate_mappings
     validate_hold_to_play
     validate_linked_areas
@@ -110,6 +113,13 @@ class SongManifest
     Integer(value)
   rescue ArgumentError, TypeError
     nil
+  end
+
+  def effective_chain_count
+    return LEGACY_CHAIN_COUNT unless data.key?('chain_count')
+
+    count = data['chain_count']
+    count.is_a?(Integer) && count.between?(MIN_CHAIN_COUNT, MAX_CHAIN_COUNT) ? count : LEGACY_CHAIN_COUNT
   end
 
   private
@@ -142,14 +152,24 @@ class SongManifest
     end
   end
 
+  def validate_chain_count
+    return unless data.key?('chain_count')
+
+    count = data['chain_count']
+    return if count.is_a?(Integer) && count.between?(MIN_CHAIN_COUNT, MAX_CHAIN_COUNT)
+
+    errors << "chain_count must be an integer between #{MIN_CHAIN_COUNT} and #{MAX_CHAIN_COUNT}"
+  end
+
   def validate_mappings
     mappings = data['mappings']
     unless mappings.is_a?(Hash)
-      errors << 'mappings must be an object containing chain1..chain4'
+      errors << "mappings must be an object containing chain1..chain#{effective_chain_count}"
       return
     end
 
-    CHAINS.each do |chain|
+    validate_chain_keys(mappings, 'mappings')
+    chains.each do |chain|
       arr = mappings[chain]
       unless arr.is_a?(Array)
         errors << "mappings.#{chain} must be an array"
@@ -173,11 +193,12 @@ class SongManifest
   def validate_hold_to_play
     holds = data['holdToPlay']
     unless holds.is_a?(Hash)
-      errors << 'holdToPlay must be an object containing chain1..chain4'
+      errors << "holdToPlay must be an object containing chain1..chain#{effective_chain_count}"
       return
     end
 
-    CHAINS.each do |chain|
+    validate_chain_keys(holds, 'holdToPlay')
+    chains.each do |chain|
       arr = holds[chain]
       unless arr.is_a?(Array)
         errors << "holdToPlay.#{chain} must be an array"
@@ -190,11 +211,12 @@ class SongManifest
   def validate_linked_areas
     linked = data['linkedAreas']
     unless linked.is_a?(Hash)
-      errors << 'linkedAreas must be an object containing chain1..chain4'
+      errors << "linkedAreas must be an object containing chain1..chain#{effective_chain_count}"
       return
     end
 
-    CHAINS.each do |chain|
+    validate_chain_keys(linked, 'linkedAreas')
+    chains.each do |chain|
       groups = linked[chain]
       unless groups.is_a?(Array)
         errors << "linkedAreas.#{chain} must be an array of arrays"
@@ -224,25 +246,40 @@ class SongManifest
     end
   end
 
+  def chains
+    (1..effective_chain_count).map { |number| "chain#{number}" }
+  end
+
+  def validate_chain_keys(section, label)
+    allowed = chains
+    section.each_key do |key|
+      next unless key.to_s.match?(/\Achain\d+\z/)
+      next if allowed.include?(key)
+
+      errors << "#{label}.#{key} is not allowed for chain_count #{effective_chain_count}"
+    end
+  end
+
   def validate_zip_references
     files = entries.reject { |e| e.end_with?('/') }
     mappings = data['mappings']
     return unless mappings.is_a?(Hash)
 
     used = []
-    CHAINS.each_with_index do |chain, idx|
+    chains.each do |chain|
       arr = mappings[chain]
       next unless arr.is_a?(Array)
       arr.each_with_index do |sample, pad|
         next unless sample.is_a?(String) && !sample.empty?
-        expected = "sounds/chain#{idx + 1}/#{AudioSample.resolve_filename(sample)}"
+        expected = "sounds/#{chain}/#{AudioSample.resolve_filename(sample)}"
         used << expected
         errors << "Missing ZIP entry for #{chain} pad #{pad} (#{KEY_LABELS[pad]}): #{expected}" unless files.include?(expected)
       end
     end
 
     audio_files = files.select do |entry|
-      entry.match?(/\Asounds\/chain[1-4]\//) && AudioSample.supported?(entry)
+      match = entry.match(/\Asounds\/chain(\d+)\//)
+      match && match[1].to_i.between?(1, effective_chain_count) && AudioSample.supported?(entry)
     end
     unused = audio_files - used
     warnings << "#{unused.length} supported audio file(s) in the ZIP are not mapped to any pad" if unused.any?

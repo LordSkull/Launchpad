@@ -27,6 +27,117 @@ class SongManifestTest < ActiveSupport::TestCase
     end
   end
 
+  test 'legacy manifest without chain_count uses four chains' do
+    Dir.mktmpdir do |root|
+      data = valid_manifest_hash
+      refute data.key?('chain_count')
+
+      manifest = build_manifest(root, data)
+
+      assert manifest.valid?, manifest.errors.inspect
+      assert_equal 4, manifest.effective_chain_count
+    end
+  end
+
+  test 'explicit chain counts from four through eight are accepted' do
+    Dir.mktmpdir do |root|
+      (4..8).each do |chain_count|
+        manifest = build_manifest(root, manifest_hash_for_chain_count(chain_count))
+
+        assert manifest.valid?, "Expected chain_count #{chain_count} to be valid: #{manifest.errors.inspect}"
+        assert_equal chain_count, manifest.effective_chain_count
+      end
+    end
+  end
+
+  test 'chain_count must be an integer from four through eight when present' do
+    Dir.mktmpdir do |root|
+      [3, 9, 0, -1, '5', 5.0, nil].each do |chain_count|
+        manifest = build_manifest(root, valid_manifest_hash.merge('chain_count' => chain_count))
+
+        refute manifest.valid?, "Expected chain_count #{chain_count.inspect} to be invalid"
+        assert manifest.errors.any? { |error| error.include?('chain_count') },
+               "Expected a chain_count error for #{chain_count.inspect}: #{manifest.errors.inspect}"
+      end
+    end
+  end
+
+  test 'declared chains must be contiguous' do
+    Dir.mktmpdir do |root|
+      data = manifest_hash_for_chain_count(6)
+      %w[mappings holdToPlay linkedAreas].each { |section| data[section].delete('chain5') }
+
+      manifest = build_manifest(root, data)
+
+      refute manifest.valid?
+      assert manifest.errors.any? { |error| error.include?('mappings.chain5') }
+      assert manifest.errors.any? { |error| error.include?('holdToPlay.chain5') }
+      assert manifest.errors.any? { |error| error.include?('linkedAreas.chain5') }
+    end
+  end
+
+  test 'each declared chain is required in every chain section' do
+    %w[mappings holdToPlay linkedAreas].each do |section|
+      Dir.mktmpdir do |root|
+        data = manifest_hash_for_chain_count(5)
+        data[section].delete('chain5')
+
+        manifest = build_manifest(root, data)
+
+        refute manifest.valid?, "Expected missing #{section}.chain5 to be invalid"
+        assert manifest.errors.any? { |error| error.include?("#{section}.chain5") }, manifest.errors.inspect
+      end
+    end
+  end
+
+  test 'chain keys beyond the declared count are rejected in every chain section' do
+    %w[mappings holdToPlay linkedAreas].each do |section|
+      Dir.mktmpdir do |root|
+        data = manifest_hash_for_chain_count(5)
+        data[section]['chain6'] = section == 'mappings' ? Array.new(48) { '' } : []
+
+        manifest = build_manifest(root, data)
+
+        refute manifest.valid?, "Expected extra #{section}.chain6 to be invalid"
+        assert manifest.errors.any? { |error| error.include?("#{section}.chain6") }, manifest.errors.inspect
+      end
+    end
+  end
+
+  test 'chain0 and chain9 are rejected' do
+    %w[chain0 chain9].each do |chain|
+      Dir.mktmpdir do |root|
+        data = manifest_hash_for_chain_count(8)
+        data['mappings'][chain] = Array.new(48) { '' }
+
+        manifest = build_manifest(root, data)
+
+        refute manifest.valid?
+        assert manifest.errors.any? { |error| error.include?("mappings.#{chain}") }, manifest.errors.inspect
+      end
+    end
+  end
+
+  test 'chain8 validates mappings zip references hold to play linked areas and mixed audio' do
+    Dir.mktmpdir do |root|
+      data = manifest_hash_for_chain_count(8)
+      data['mappings']['chain8'][0] = 'kick.wav'
+      data['mappings']['chain8'][1] = 'vocal.mp3'
+      data['mappings']['chain8'][2] = 'synth.ogg'
+      data['holdToPlay']['chain8'] = [0]
+      data['linkedAreas']['chain8'] = [[0, 1, 2]]
+
+      manifest = build_manifest(
+        root,
+        data,
+        entries: ['sounds/chain8/kick.wav', 'sounds/chain8/vocal.mp3', 'sounds/chain8/synth.ogg']
+      )
+
+      assert manifest.valid?, manifest.errors.inspect
+      assert_empty manifest.errors
+    end
+  end
+
   test 'mappings must contain exactly 48 entries' do
     Dir.mktmpdir do |root|
       [47, 49].each do |entry_count|
@@ -174,6 +285,20 @@ class SongManifestTest < ActiveSupport::TestCase
     chains = %w[chain1 chain2 chain3 chain4]
 
     {
+      'song_name' => 'Test Song',
+      'filename' => 'test_song',
+      'bpm' => 120,
+      'mappings' => chains.to_h { |chain| [chain, Array.new(48) { '' }] },
+      'holdToPlay' => chains.to_h { |chain| [chain, []] },
+      'linkedAreas' => chains.to_h { |chain| [chain, []] }
+    }
+  end
+
+  def manifest_hash_for_chain_count(chain_count)
+    chains = (1..chain_count).map { |number| "chain#{number}" }
+
+    {
+      'chain_count' => chain_count,
       'song_name' => 'Test Song',
       'filename' => 'test_song',
       'bpm' => 120,

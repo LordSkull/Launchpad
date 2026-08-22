@@ -1,7 +1,9 @@
 (function () {
   'use strict';
 
-  var CHAINS = ['chain1', 'chain2', 'chain3', 'chain4'];
+  var MIN_CHAIN_COUNT = 4;
+  var MAX_CHAIN_COUNT = 8;
+  var ALL_CHAINS = Array.from({ length: MAX_CHAIN_COUNT }, function (_, index) { return 'chain' + (index + 1); });
   var PAD_LABELS = [
     '1','2','3','4','5','6','7','8','9','0','-','=',
     'Q','W','E','R','T','Y','U','I','O','P','[',']',
@@ -10,15 +12,24 @@
   ];
 
   var state = {
+    chainCount: MIN_CHAIN_COUNT,
     activeChain: 0,
     zipFile: null,
     zipEntries: [],
-    samples: { chain1: [], chain2: [], chain3: [], chain4: [] },
-    mappings: { chain1: blank48(), chain2: blank48(), chain3: blank48(), chain4: blank48() },
-    holdToPlay: { chain1: new Set(), chain2: new Set(), chain3: new Set(), chain4: new Set() }
+    zipParsedSuccessfully: false,
+    samples: createChainState(function () { return []; }),
+    mappings: createChainState(blank48),
+    holdToPlay: createChainState(function () { return new Set(); }),
+    linkedText: createChainState(function () { return ''; })
   };
 
   function blank48() { return Array(48).fill(''); }
+  function createChainState(factory) {
+    var result = {};
+    ALL_CHAINS.forEach(function (chain) { result[chain] = factory(); });
+    return result;
+  }
+  function activeChains() { return ALL_CHAINS.slice(0, state.chainCount); }
   function $(id) { return document.getElementById(id); }
 
   function init() {
@@ -27,6 +38,7 @@
     renderPads();
 
     $('zipInput').addEventListener('change', onZipSelected);
+    $('chainCount').addEventListener('change', onChainCountChanged);
     $('autoFill').addEventListener('click', autoFill);
     $('clearChain').addEventListener('click', clearChain);
     $('validateBtn').addEventListener('click', function () { showValidation(validate()); });
@@ -34,10 +46,19 @@
     $('installBtn').addEventListener('click', installSong);
   }
 
+  function onChainCountChanged() {
+    state.chainCount = Number($('chainCount').value);
+    if (state.activeChain >= state.chainCount) state.activeChain = 0;
+    renderTabs();
+    renderLinkedEditors();
+    renderPads();
+    if (state.zipParsedSuccessfully) renderZipStatus();
+  }
+
   function renderTabs() {
     var host = $('chainTabs');
     host.innerHTML = '';
-    CHAINS.forEach(function (chain, i) {
+    activeChains().forEach(function (chain, i) {
       var b = document.createElement('button');
       b.textContent = 'Chain ' + (i + 1);
       if (i === state.activeChain) b.className = 'active';
@@ -49,12 +70,14 @@
   function renderLinkedEditors() {
     var host = $('linkedEditors');
     host.innerHTML = '';
-    CHAINS.forEach(function (chain, i) {
+    activeChains().forEach(function (chain, i) {
       var label = document.createElement('label');
       label.textContent = 'Chain ' + (i + 1) + ' linked groups';
       var ta = document.createElement('textarea');
       ta.id = 'linked-' + chain;
       ta.placeholder = '1,Q,A,Z\n2,W,S,X';
+      ta.value = state.linkedText[chain];
+      ta.addEventListener('input', function () { state.linkedText[chain] = this.value; });
       label.appendChild(ta);
       host.appendChild(label);
     });
@@ -62,7 +85,7 @@
 
   function renderPads() {
     var host = $('padGrid');
-    var chain = CHAINS[state.activeChain];
+    var chain = ALL_CHAINS[state.activeChain];
     var samples = state.samples[chain];
     host.innerHTML = '';
 
@@ -107,24 +130,32 @@
     select.appendChild(o);
   }
 
+  function renderZipStatus() {
+    var counts = activeChains().map(function (c, i) { return 'chain' + (i + 1) + ': ' + state.samples[c].length + ' audio sample(s)'; });
+    var junk = state.zipEntries.filter(function (e) { return e.indexOf('__MACOSX/') === 0 || /(^|\/)\.DS_Store$/.test(e); }).length;
+    $('zipStatus').className = 'status good';
+    $('zipStatus').textContent = 'ZIP read successfully.\n' + counts.join(' | ') + (junk ? '\nNote: ' + junk + ' macOS metadata entries found.' : '');
+  }
+
   async function onZipSelected(event) {
     var file = event.target.files && event.target.files[0];
     if (!file) return;
     state.zipFile = file;
+    state.zipParsedSuccessfully = false;
     $('zipStatus').textContent = 'Reading ZIP directory...';
 
     try {
       var entries = await listZipEntries(file);
       state.zipEntries = entries;
-      state.samples = { chain1: [], chain2: [], chain3: [], chain4: [] };
+      state.samples = createChainState(function () { return []; });
 
       entries.forEach(function (entry) {
         var normalized = entry.replace(/\\/g, '/');
-        var m = normalized.match(/^sounds\/chain([1-4])\/(.+)$/);
+        var m = normalized.match(/^sounds\/chain([1-8])\/(.+)$/);
         if (m && Audio_Sample_Space.isSupported(m[2])) state.samples['chain' + m[1]].push(m[2]);
       });
 
-      CHAINS.forEach(function (chain) {
+      ALL_CHAINS.forEach(function (chain) {
         state.samples[chain] = unique(state.samples[chain]).sort(naturalSort);
       });
 
@@ -132,26 +163,25 @@
         $('filename').value = file.name.replace(/\.zip$/i, '').replace(/[^A-Za-z0-9_-]+/g, '_');
       }
 
-      var counts = CHAINS.map(function (c, i) { return 'chain' + (i + 1) + ': ' + state.samples[c].length + ' audio sample(s)'; });
-      var junk = entries.filter(function (e) { return e.indexOf('__MACOSX/') === 0 || /(^|\/)\.DS_Store$/.test(e); }).length;
-      $('zipStatus').className = 'status good';
-      $('zipStatus').textContent = 'ZIP read successfully.\n' + counts.join(' | ') + (junk ? '\nNote: ' + junk + ' macOS metadata entries found.' : '');
+      state.zipParsedSuccessfully = true;
+      renderZipStatus();
       renderPads();
     } catch (err) {
+      state.zipParsedSuccessfully = false;
       $('zipStatus').className = 'status bad';
       $('zipStatus').textContent = 'Could not read ZIP: ' + err.message;
     }
   }
 
   function autoFill() {
-    var chain = CHAINS[state.activeChain];
+    var chain = ALL_CHAINS[state.activeChain];
     state.mappings[chain] = blank48();
     state.samples[chain].slice(0, 48).forEach(function (sample, i) { state.mappings[chain][i] = sample; });
     renderPads();
   }
 
   function clearChain() {
-    var chain = CHAINS[state.activeChain];
+    var chain = ALL_CHAINS[state.activeChain];
     state.mappings[chain] = blank48();
     state.holdToPlay[chain].clear();
     renderPads();
@@ -159,25 +189,24 @@
 
   function buildManifest() {
     var songNumRaw = $('songNumber').value.trim();
+    var mappings = cloneMappings();
+    var holdToPlay = {};
+    var linkedAreas = {};
+    activeChains().forEach(function (chain) {
+      holdToPlay[chain] = sortedNumbers(state.holdToPlay[chain]);
+      linkedAreas[chain] = parseLinked(state.linkedText[chain]);
+    });
+
     return {
       schema_version: 1,
+      chain_count: state.chainCount,
       song_number: songNumRaw ? Number(songNumRaw) : null,
       song_name: $('songName').value.trim(),
       bpm: Number($('bpm').value),
       filename: $('filename').value.trim(),
-      mappings: cloneMappings(),
-      holdToPlay: {
-        chain1: sortedNumbers(state.holdToPlay.chain1),
-        chain2: sortedNumbers(state.holdToPlay.chain2),
-        chain3: sortedNumbers(state.holdToPlay.chain3),
-        chain4: sortedNumbers(state.holdToPlay.chain4)
-      },
-      linkedAreas: {
-        chain1: parseLinked($('linked-chain1').value),
-        chain2: parseLinked($('linked-chain2').value),
-        chain3: parseLinked($('linked-chain3').value),
-        chain4: parseLinked($('linked-chain4').value)
-      }
+      mappings: mappings,
+      holdToPlay: holdToPlay,
+      linkedAreas: linkedAreas
     };
   }
 
@@ -197,7 +226,7 @@
     if (data.song_number !== null && (!(Number.isInteger(data.song_number)) || data.song_number < 1)) errors.push('Song ID must be a positive integer or blank.');
     if (!state.zipFile) errors.push('Select a sound ZIP.');
 
-    CHAINS.forEach(function (chain, ci) {
+    activeChains().forEach(function (chain, ci) {
       if (data.mappings[chain].length !== 48) errors.push(chain + ' does not contain 48 pad positions.');
       data.mappings[chain].forEach(function (sample, pad) {
         if (!sample) return;
@@ -300,12 +329,9 @@
   }
 
   function cloneMappings() {
-    return {
-      chain1: state.mappings.chain1.slice(),
-      chain2: state.mappings.chain2.slice(),
-      chain3: state.mappings.chain3.slice(),
-      chain4: state.mappings.chain4.slice()
-    };
+    var mappings = {};
+    activeChains().forEach(function (chain) { mappings[chain] = state.mappings[chain].slice(); });
+    return mappings;
   }
 
   function parseLinked(text) {
