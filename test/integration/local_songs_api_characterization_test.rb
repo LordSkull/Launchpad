@@ -101,6 +101,35 @@ class LocalSongsApiCharacterizationTest < ActionDispatch::IntegrationTest
     assert_guard_unchanged
   end
 
+  test 'create and index preserve an eight chain manifest' do
+    data = valid_manifest(
+      filename: 'eight_chain_song',
+      song_name: 'Eight Chain Song',
+      song_number: 45,
+      chain_count: 8
+    )
+    data['holdToPlay']['chain8'] = [0]
+    data['linkedAreas']['chain8'] = [[0, 1]]
+    zip_path = write_minimal_zip(File.join(@temporary_root, 'uploads', 'eight-chain-song.zip'))
+
+    post_song(data, zip_path)
+
+    assert_response :created
+    assert_equal true, parsed_response['ok']
+
+    with_local_api do
+      get '/dev/song_imports'
+    end
+
+    assert_response :success
+    song = parsed_response.fetch('songs').find { |item| item['filename'] == 'eight_chain_song' }
+    refute_nil song
+    assert_equal 8, song['chain_count']
+    assert_equal 48, song.dig('mappings', 'chain8').length
+    assert_equal [0], song.dig('holdToPlay', 'chain8')
+    assert_equal [[0, 1]], song.dig('linkedAreas', 'chain8')
+  end
+
   test 'create rejects an unsafe filename without installing files' do
     data = valid_manifest(filename: '../evil', song_name: 'Unsafe Song', song_number: 43)
     zip_path = write_minimal_zip(File.join(@temporary_root, 'uploads', 'unsafe-song.zip'))
@@ -208,10 +237,11 @@ class LocalSongsApiCharacterizationTest < ActionDispatch::IntegrationTest
     upload.close if upload && upload.respond_to?(:close)
   end
 
-  def valid_manifest(filename:, song_name:, song_number:)
-    chains = %w[chain1 chain2 chain3 chain4]
+  def valid_manifest(filename:, song_name:, song_number:, chain_count: nil)
+    effective_chain_count = chain_count || 4
+    chains = (1..effective_chain_count).map { |number| "chain#{number}" }
 
-    {
+    manifest = {
       'schema_version' => 1,
       'song_number' => song_number,
       'song_name' => song_name,
@@ -221,6 +251,8 @@ class LocalSongsApiCharacterizationTest < ActionDispatch::IntegrationTest
       'holdToPlay' => chains.to_h { |chain| [chain, []] },
       'linkedAreas' => chains.to_h { |chain| [chain, []] }
     }
+    manifest['chain_count'] = chain_count if chain_count
+    manifest
   end
 
   def install_song(data)

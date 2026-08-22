@@ -16,7 +16,7 @@ Launchpad è un'applicazione web che simula un controller Launchpad direttamente
 - Launchpad virtuale utilizzabile direttamente dal browser
 - Controllo tramite tastiera e mouse
 - Riproduzione audio MP3/WAV/OGG tramite Howler.js
-- Supporto a 4 chain da 48 pad ciascuna
+- Supporto da 4 a 8 chain da 48 pad ciascuna
 - Sound pack built-in
 - Aggiunta di nuove canzoni tramite Song Builder
 - Validazione automatica dei manifest e dei sound pack
@@ -131,7 +131,11 @@ Il selettore nella pagina principale permette di scegliere tra layout **US** (pr
 
 Nel layout US il pad 48 usa il tasto `\`; nel layout italiano la quarta riga inizia con il tasto `<` della tastiera ISO.
 
-Il Launchpad è organizzato in **4 chain**, ognuna composta da **48 pad**.
+Ogni song del Launchpad contiene da **4 a 8 chain**, ognuna composta da **48 pad**. Le song esistenti senza un numero di chain dichiarato continuano a usare 4 chain.
+
+Le chain 1–4 si selezionano con `ArrowLeft`, `ArrowUp`, `ArrowDown` e `ArrowRight`. Le chain 5–8 usano rispettivamente `Ctrl` con le stesse frecce. Se la chain richiesta non è disponibile, la shortcut non cambia lo stato.
+
+Su macOS, `Ctrl+Arrow` può essere riservato da Mission Control/Spaces. In questo caso usa i pulsanti chain sullo schermo.
 
 ---
 
@@ -149,7 +153,7 @@ Il builder permette di:
 
 - scegliere uno ZIP contenente i sample;
 - impostare nome e BPM;
-- configurare le 4 chain;
+- scegliere e configurare da 4 a 8 chain;
 - assegnare i sample ai 48 pad;
 - impostare i pad `hold to play`;
 - configurare gruppi di pad collegati;
@@ -176,7 +180,10 @@ sounds/
 │   └── synth.mp3
 ├── chain3/
 │   └── ...
-└── chain4/
+├── chain4/
+│   └── ...
+├── ...
+└── chainN/              # fino a chain8, in base al numero dichiarato
     └── ...
 ```
 

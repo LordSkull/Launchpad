@@ -5,15 +5,12 @@ var Keyboard_Space = new function(){
     }
     
     var Keyboard = function(){
-        for(var i = 0; i < numChains; i++)
-            currentSounds.push([]);
+        currentChainCount = Chain_Control_Space.effectiveChainCount(currentSongData);
+        allocateCurrentSounds();
             
         var this_obj = this;
         Zip_Space.loadZip(currentSongData["filename"], function() {
-            this_obj.loadSounds(currentSongData["mappings"]["chain1"], currentSounds[0], 1);
-            this_obj.loadSounds(currentSongData["mappings"]["chain2"], currentSounds[1], 2);
-            this_obj.loadSounds(currentSongData["mappings"]["chain3"], currentSounds[2], 3);
-            this_obj.loadSounds(currentSongData["mappings"]["chain4"], currentSounds[3], 4);
+            loadCurrentSongSounds(this_obj);
             
             this_obj.keyboardUI = Keyboard_UI_Space.initKeyboardUI();
             
@@ -23,6 +20,14 @@ var Keyboard_Space = new function(){
     
     Keyboard.prototype.getCurrentSounds = function(){
         return currentSounds;
+    }
+
+    Keyboard.prototype.getCurrentChainCount = function(){
+        return currentChainCount;
+    }
+
+    Keyboard.prototype.isSoundPackAvailable = function(sp){
+        return Number.isInteger(sp) && sp >= 0 && sp < currentChainCount;
     }
     
     // loads sounds from srcArray for given chain into soundArr
@@ -68,29 +73,24 @@ var Keyboard_Space = new function(){
     // if they have, load the keyboard
     Keyboard.prototype.checkLoaded = function(){
         numSoundsLoaded++;
-        $(".soundPack").html("Loading sounds ("+numSoundsLoaded+"/"+(4*12*numChains)+")");
-        if(numSoundsLoaded == 4*12*numChains){
+        var loadingTarget = 48*currentChainCount;
+        $(".soundPack").html("Loading sounds ("+numSoundsLoaded+"/"+loadingTarget+")");
+        if(numSoundsLoaded == loadingTarget){
             loadingSongs = false;
-            this.keyboardUI.loadKeyboard(this, currentSongData, currentSoundPack);
+            this.keyboardUI.loadKeyboard(this, currentSongData, currentSoundPack, currentChainCount);
         }
     }
     
-    Keyboard.prototype.switchSoundPackCheck = function(code){
-        var soundPackByCode = {
-            ArrowLeft: 0,
-            ArrowUp: 1,
-            ArrowDown: 2,
-            ArrowRight: 3
-        };
-        if(soundPackByCode.hasOwnProperty(code)){
-            this.switchSoundPack(soundPackByCode[code]);
-            return true;
-        }
-        return false;
+    Keyboard.prototype.switchSoundPackCheck = function(code, modifiers){
+        var target = Chain_Control_Space.resolveShortcut(code, modifiers);
+        return target != -1 && this.switchSoundPack(target);
     }
     
     // switch sound pack and update pressures
     Keyboard.prototype.switchSoundPack = function(sp){
+        if(!this.isSoundPackAvailable(sp))
+            return false;
+
         // release all keys
         for(var i = 0; i < 4; i++)
             for(var j = 0; j < 12; j++)
@@ -100,20 +100,22 @@ var Keyboard_Space = new function(){
         // set the new soundpack
         currentSoundPack = sp;
         
-        $(".sound_pack_button").css("background-color","white");
-        $(".sound_pack_button_"+(currentSoundPack+1)).css("background-color","rgb(255,160,0)");
-        $(".soundPack").html("Sound Pack: "+(currentSoundPack+1));
+        $(".soundPack").html("Chain: "+(currentSoundPack+1));
+        if(this.keyboardUI)
+            this.keyboardUI.refreshChainControls(this, currentChainCount, currentSoundPack);
         // set pressures for buttons in new sound pack
         for(var i = 0; i < 4; i++){
             for(var j = 0; j < 12; j++){
                 var press = false;
-                if(currentSongData["holdToPlay"]["chain"+(currentSoundPack+1)].indexOf((i*12+j)) != -1)
+                var holdToPlay = currentSongData["holdToPlay"]["chain"+(currentSoundPack+1)] || [];
+                if(holdToPlay.indexOf((i*12+j)) != -1)
                     press = true;
                 $('.button-'+(i*12+j)+'').attr("pressure", ""+press+"");
                 // holdToPlay coloring, turned off for now
                 //$('.button-'+(i*12+j)+'').css("background-color", $('.button-'+(i*12+j)+'').attr("pressure") == "true" ? "lightgray" : "white");
             }
         }
+        return true;
     }
     
     // key released
@@ -156,7 +158,8 @@ var Keyboard_Space = new function(){
             currentSounds[currentSoundPack][padIndex].play();
                 
             // go through all linked Areas in current chain
-            currentSongData["linkedAreas"]["chain"+(currentSoundPack+1)].forEach(function(el, ind, arr){
+            var linkedAreas = currentSongData["linkedAreas"]["chain"+(currentSoundPack+1)] || [];
+            linkedAreas.forEach(function(el, ind, arr){
                 // for ever linked area array
                 for(var j = 0; j < el.length; j++){
                     // if pad index is in linked area array
@@ -198,6 +201,9 @@ var Keyboard_Space = new function(){
                 loadingSongs = true;
                 currentSongInd = tempS
                 currentSongData = songDatas[currentSongInd];
+                currentSoundPack = 0;
+                currentChainCount = Chain_Control_Space.effectiveChainCount(currentSongData);
+                mainObj.keyboardUI.refreshChainControls(mainObj, currentChainCount, currentSoundPack);
                 $(".song_selection").css("background-color","white");
                 $("[songInd='"+currentSongInd+"']").css("background-color","rgb(220,220,220)");
                 
@@ -209,22 +215,28 @@ var Keyboard_Space = new function(){
                             currentSounds[i][k].unload();
                     }
                 }
-                currentSounds = [];
-                for(var i = 0; i < numChains; i++)
-                    currentSounds.push([]);
+                allocateCurrentSounds();
                 numSoundsLoaded = 0;
                 Zip_Space.loadZip(currentSongData["filename"], function() {
-                    mainObj.loadSounds(currentSongData["mappings"]["chain1"], currentSounds[0], 1);
-                    mainObj.loadSounds(currentSongData["mappings"]["chain2"], currentSounds[1], 2);
-                    mainObj.loadSounds(currentSongData["mappings"]["chain3"], currentSounds[2], 3);
-                    mainObj.loadSounds(currentSongData["mappings"]["chain4"], currentSounds[3], 4);
+                    loadCurrentSongSounds(mainObj);
                 })
                 
             }
         });
     }
     
-    // current soundpack (0-3)
+    function allocateCurrentSounds(){
+        currentSounds = [];
+        for(var i = 0; i < currentChainCount; i++)
+            currentSounds.push([]);
+    }
+
+    function loadCurrentSongSounds(keyboard){
+        for(var chainNumber = 1; chainNumber <= currentChainCount; chainNumber++)
+            keyboard.loadSounds(currentSongData["mappings"]["chain"+chainNumber], currentSounds[chainNumber-1], chainNumber);
+    }
+
+    // current soundpack (zero-based)
     var currentSoundPack = 0;
     // number of sounds loaded
     var numSoundsLoaded = 0;
@@ -234,8 +246,8 @@ var Keyboard_Space = new function(){
     var songDatas = [equinoxData, animalsData, electroData, ghetData, kyotoData, aeroData].concat(window.userSongDatas || []);
     var currentSongInd = 0;
     var currentSongData = equinoxData;
-    // number of chains
-    var numChains = 4;
+    // number of chains in the current song
+    var currentChainCount = Chain_Control_Space.effectiveChainCount(currentSongData);
     
     var loadingSongs = true;
 

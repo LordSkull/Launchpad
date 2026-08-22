@@ -16,4 +16,5 @@
 //= require 00_user_songs
 //= require audioSamples
 //= require keyboardLayouts
+//= require chainControls
 //= require_tree .

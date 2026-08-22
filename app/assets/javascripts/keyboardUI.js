@@ -67,14 +67,15 @@ var Keyboard_UI_Space = new function(){
     }
     
     // creates elements for keyboard and appends them to the document
-    KeyboardUI.prototype.loadKeyboard = function(keyboard, currentSongData, currentSoundPack){
+    KeyboardUI.prototype.loadKeyboard = function(keyboard, currentSongData, currentSoundPack, currentChainCount){
         for(var i = 0; i < 4; i++){
             // create new row
             $(".buttons").append('<div class="button-row"></div>');
             // create 12 buttons per row
             for(var j = 0; j < 12; j++){
                 var press = false;
-                if(currentSongData["holdToPlay"]["chain"+(currentSoundPack+1)].indexOf((i*12+j)) != -1)
+                var holdToPlay = currentSongData["holdToPlay"]["chain"+(currentSoundPack+1)] || [];
+                if(holdToPlay.indexOf((i*12+j)) != -1)
                     press = true;
                 var str = Keyboard_Layout_Space.getLabel(this.currentLayoutId, i*12+j);
                 var button = $("<div></div>")
@@ -90,16 +91,11 @@ var Keyboard_UI_Space = new function(){
             }
         }
         
-        $(".soundPack").html("Sound Pack: "+(currentSoundPack+1));
+        $(".soundPack").html("Chain: "+(currentSoundPack+1));
         $("#keyboard_layout").val(this.currentLayoutId);
+        this.refreshChainControls(keyboard, currentChainCount, currentSoundPack);
         
         if(!loaded){
-            $("#sound_pack_buttons").append('<div class="sound_pack_button sound_pack_button_2">^</div>');
-            $("#sound_pack_buttons").append('<div class="sound_pack_button sound_pack_button_1"><</div>');
-            $("#sound_pack_buttons").append('<div class="sound_pack_button sound_pack_button_3">v</div>');
-            $("#sound_pack_buttons").append('<div class="sound_pack_button sound_pack_button_4">></div>');
-            $(".sound_pack_button_"+(currentSoundPack+1)).css("background-color","rgb(255,160,0)");
-            
             this.touchScreenSetup(keyboard);
             this.layoutSelectionSetup(keyboard);
             
@@ -110,6 +106,37 @@ var Keyboard_UI_Space = new function(){
             this.initUI();
             
             loaded = true;
+        }
+    }
+
+    KeyboardUI.prototype.refreshChainControls = function(keyboard, currentChainCount, currentSoundPack){
+        var thisObj = this;
+        var labels = ["1 ←", "2 ↑", "3 ↓", "4 →", "5 Ctrl+←", "6 Ctrl+↑", "7 Ctrl+↓", "8 Ctrl+→"];
+        var host = $("#sound_pack_buttons");
+        host.empty();
+
+        for(var groupStart = 0; groupStart < 8; groupStart += 4){
+            var group = $("<div></div>").addClass("sound_pack_button_group");
+            for(var index = groupStart; index < groupStart + 4; index++){
+                (function(targetIndex){
+                    var available = targetIndex < currentChainCount;
+                    var button = $("<button></button>")
+                        .attr("type", "button")
+                        .addClass("sound_pack_button sound_pack_button_"+(targetIndex+1))
+                        .toggleClass("active", targetIndex == currentSoundPack)
+                        .attr("aria-pressed", targetIndex == currentSoundPack ? "true" : "false")
+                        .prop("disabled", !available)
+                        .text(labels[targetIndex]);
+                    button.click(function(){
+                        if(!keyboard.isSoundPackAvailable(targetIndex))
+                            return;
+                        thisObj.releaseActiveKeyboardPads(keyboard);
+                        keyboard.switchSoundPack(targetIndex);
+                    });
+                    group.append(button);
+                })(index);
+            }
+            host.append(group);
         }
     }
 
@@ -169,11 +196,12 @@ var Keyboard_UI_Space = new function(){
             }
 
             var code = thisObj.getEventCode(e);
-            var noModifiers = !(e.ctrlKey || e.metaKey || e.altKey || e.shiftKey);
-            var isChainCode = ["ArrowLeft", "ArrowUp", "ArrowDown", "ArrowRight"].indexOf(code) != -1;
-            if(noModifiers && isChainCode){
-                thisObj.releaseActiveKeyboardPads(keyboard);
-                keyboard.switchSoundPackCheck(code);
+            var targetSoundPack = Chain_Control_Space.resolveShortcut(code, e);
+            if(targetSoundPack != -1){
+                if(keyboard.isSoundPackAvailable(targetSoundPack)){
+                    thisObj.releaseActiveKeyboardPads(keyboard);
+                    keyboard.switchSoundPack(targetSoundPack);
+                }
                 e.preventDefault();
                 return;
             }
