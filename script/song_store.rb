@@ -7,6 +7,38 @@ require 'tmpdir'
 class UserSongStore
   attr_reader :repo_root, :songs_root
 
+  class VerifiedZip
+    CHUNK_SIZE = 64 * 1024
+
+    attr_reader :last_modified, :size
+
+    def initialize(io, size, last_modified)
+      @io = io
+      @size = size
+      @last_modified = last_modified
+    end
+
+    def each
+      return enum_for(:each) unless block_given?
+
+      begin
+        while (chunk = @io.read(CHUNK_SIZE))
+          yield chunk
+        end
+      ensure
+        close
+      end
+    end
+
+    def close
+      @io.close unless @io.closed?
+    end
+
+    def closed?
+      @io.closed?
+    end
+  end
+
   def initialize(repo_root)
     @repo_root = File.expand_path(repo_root)
     @songs_root = File.join(@repo_root, 'user_data', 'songs')
@@ -75,6 +107,39 @@ class UserSongStore
   end
 
   def zip_path(filename)
+    validated_zip_entry(filename).first
+  end
+
+  def open_zip(filename)
+    zip, expected_stat = validated_zip_entry(filename)
+    io = File.open(zip, 'rb')
+    opened_stat = io.stat
+    raise 'Unsafe song storage path.' unless same_file?(expected_stat, opened_stat)
+
+    verified_zip = VerifiedZip.new(io, opened_stat.size, opened_stat.mtime)
+    io = nil
+    verified_zip
+  ensure
+    io.close if defined?(io) && io && !io.closed?
+  end
+
+  def installed?(filename)
+    real_root = ensure_safe_root!
+    song_dir = File.join(songs_root, normalize_filename(filename))
+    safe_real_path?(song_dir, real_root, :directory)
+  end
+
+  def existing_song_numbers
+    (built_in_song_numbers + user_song_numbers).uniq
+  end
+
+  def next_song_number
+    (existing_song_numbers.max || 0) + 1
+  end
+
+  private
+
+  def validated_zip_entry(filename)
     real_root = ensure_safe_root!
     filename = normalize_filename(filename)
     song_dir = File.join(songs_root, filename)
@@ -93,24 +158,8 @@ class UserSongStore
       raise "User song '#{filename}' was not found."
     end
 
-    zip
+    [zip, zip_stat]
   end
-
-  def installed?(filename)
-    real_root = ensure_safe_root!
-    song_dir = File.join(songs_root, normalize_filename(filename))
-    safe_real_path?(song_dir, real_root, :directory)
-  end
-
-  def existing_song_numbers
-    (built_in_song_numbers + user_song_numbers).uniq
-  end
-
-  def next_song_number
-    (existing_song_numbers.max || 0) + 1
-  end
-
-  private
 
   def install_under_lock!(manifest, allow_public_zip_conflict)
     ensure_safe_root!

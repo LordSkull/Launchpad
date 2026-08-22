@@ -220,7 +220,104 @@ class LocalSongsApiCharacterizationTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_equal 'application/zip', response.media_type
+    assert_match(/inline/, response.headers['Content-Disposition'])
+    assert_match(/filename="sounds.zip"/, response.headers['Content-Disposition'])
+    assert_equal 'binary', response.headers['Content-Transfer-Encoding']
+    assert_equal expected_bytes.bytesize.to_s, response.headers['Content-Length']
+    assert_nothing_raised { Time.httpdate(response.headers.fetch('Last-Modified')) }
+    assert_nil response.headers['ETag']
+    assert_equal 'no-cache', response.headers['Cache-Control']
     assert_equal expected_bytes, response.body.b
+    assert_guard_unchanged
+  end
+
+  test 'zip head returns archive headers and closes the verified descriptor without a body' do
+    zip_path = install_song(valid_manifest(filename: 'zip_song', song_name: 'ZIP Song', song_number: 45))
+    expected_size = File.size(zip_path)
+    original_open_zip = @store.method(:open_zip)
+    opened_body = nil
+    capturing_open_zip = proc do |filename|
+      opened_body = original_open_zip.call(filename)
+    end
+
+    @store.stub(:open_zip, capturing_open_zip) do
+      with_local_api do
+        head '/zip/sounds/zip_song.zip'
+      end
+    end
+
+    assert_response :success
+    assert_equal 'application/zip', response.media_type
+    assert_match(/inline/, response.headers['Content-Disposition'])
+    assert_match(/filename="sounds.zip"/, response.headers['Content-Disposition'])
+    assert_equal 'binary', response.headers['Content-Transfer-Encoding']
+    assert_equal expected_size.to_s, response.headers['Content-Length']
+    assert_nothing_raised { Time.httpdate(response.headers.fetch('Last-Modified')) }
+    assert_nil response.headers['ETag']
+    assert_equal 'no-cache', response.headers['Cache-Control']
+    assert_empty response.body
+    assert opened_body.closed?
+    assert_guard_unchanged
+  end
+
+  test 'zip range request preserves full 200 response without range headers' do
+    zip_path = install_song(valid_manifest(filename: 'zip_song', song_name: 'ZIP Song', song_number: 45))
+    expected_bytes = File.binread(zip_path)
+
+    with_local_api do
+      get '/zip/sounds/zip_song.zip', headers: { 'Range' => 'bytes=0-9' }
+    end
+
+    assert_response :success
+    assert_equal expected_bytes, response.body.b
+    assert_nil response.headers['Accept-Ranges']
+    assert_nil response.headers['Content-Range']
+    assert_guard_unchanged
+  end
+
+  test 'zip returns not found when the archive is replaced before verified open' do
+    install_song(valid_manifest(filename: 'zip_song', song_name: 'ZIP Song', song_number: 45))
+    installed_zip = File.join(@store.songs_root, 'zip_song', 'sounds.zip')
+    original_zip = File.join(@store.songs_root, 'zip_song', 'original-sounds.zip')
+    outside_zip = File.join(@temporary_root, 'outside-replacement.zip')
+    File.binwrite(outside_zip, 'outside replacement')
+    original_open = File.method(:open)
+    replaced = false
+    replacing_open = proc do |path, *args, **kwargs, &block|
+      if path == installed_zip && !replaced
+        File.rename(installed_zip, original_zip)
+        File.symlink(outside_zip, installed_zip)
+        replaced = true
+      end
+      original_open.call(path, *args, **kwargs, &block)
+    end
+
+    File.stub(:open, replacing_open) do
+      with_local_api do
+        get '/zip/sounds/zip_song.zip'
+      end
+    end
+
+    assert replaced
+    assert_response :not_found
+    assert_empty response.body
+    assert_guard_unchanged
+  end
+
+  test 'zip returns not found for an unsafe archive symlink' do
+    install_song(valid_manifest(filename: 'zip_song', song_name: 'ZIP Song', song_number: 45))
+    installed_zip = File.join(@store.songs_root, 'zip_song', 'sounds.zip')
+    outside_zip = File.join(@temporary_root, 'outside.zip')
+    File.binwrite(outside_zip, 'outside zip')
+    File.unlink(installed_zip)
+    File.symlink(outside_zip, installed_zip)
+
+    with_local_api do
+      get '/zip/sounds/zip_song.zip'
+    end
+
+    assert_response :not_found
+    assert_empty response.body
     assert_guard_unchanged
   end
 

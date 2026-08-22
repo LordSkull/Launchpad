@@ -65,6 +65,7 @@ class UserSongStoreConfinementTest < ActiveSupport::TestCase
 
     operations = {
       zip_path: -> { store.zip_path('test_song') },
+      open_zip: -> { store.open_zip('test_song') },
       remove: -> { store.remove!('test_song') },
       list: -> { store.list },
       installed: -> { store.installed?('test_song') },
@@ -100,7 +101,7 @@ class UserSongStoreConfinementTest < ActiveSupport::TestCase
     refute File.exist?(File.join(outside_user_data, 'songs'))
   end
 
-  test 'zip path rejects both a symlink file and a symlink song directory' do
+  test 'zip access rejects both a symlink file and a symlink song directory' do
     store = UserSongStore.new(@repo_root)
     song_dir = File.join(store.songs_root, 'test_song')
     FileUtils.mkdir_p(song_dir)
@@ -110,9 +111,11 @@ class UserSongStoreConfinementTest < ActiveSupport::TestCase
     File.symlink(outside_zip, zip_link)
 
     zip_error = assert_raises(RuntimeError) { store.zip_path('test_song') }
+    open_zip_error = assert_raises(RuntimeError) { store.open_zip('test_song') }
 
     assert File.symlink?(zip_link)
     assert_match(/Unsafe song storage path/, zip_error.message)
+    assert_match(/Unsafe song storage path/, open_zip_error.message)
     assert_equal 'external zip', File.read(outside_zip, encoding: 'UTF-8')
 
     outside_song = File.join(@outside_root, 'linked_song_target')
@@ -121,10 +124,95 @@ class UserSongStoreConfinementTest < ActiveSupport::TestCase
     File.symlink(outside_song, song_link)
 
     song_error = assert_raises(RuntimeError) { store.zip_path('linked_song') }
+    open_song_error = assert_raises(RuntimeError) { store.open_zip('linked_song') }
 
     assert File.symlink?(song_link)
     assert_match(/Unsafe song storage path/, song_error.message)
+    assert_match(/Unsafe song storage path/, open_song_error.message)
     assert File.file?(File.join(outside_song, 'sounds.zip'))
+  end
+
+  test 'open zip streams bounded chunks from a verified descriptor and closes it' do
+    store = UserSongStore.new(@repo_root)
+    song_dir = File.join(store.songs_root, 'test_song')
+    write_song(song_dir, song_name: 'Test Song', include_zip: true)
+    expected_bytes = (0..255).to_a.pack('C*') * 300
+    File.binwrite(File.join(song_dir, 'sounds.zip'), expected_bytes)
+
+    verified_zip = store.open_zip('test_song')
+    chunks = []
+
+    assert_equal expected_bytes.bytesize, verified_zip.size
+    refute_respond_to verified_zip, :to_path
+    refute verified_zip.closed?
+    verified_zip.each { |chunk| chunks << chunk }
+
+    assert_equal expected_bytes, chunks.join
+    assert chunks.all? { |chunk| chunk.bytesize <= 64 * 1024 }
+    assert verified_zip.closed?
+    verified_zip.close
+    verified_zip.close
+    assert verified_zip.closed?
+  end
+
+  test 'open zip closes when response enumeration raises' do
+    store = UserSongStore.new(@repo_root)
+    song_dir = File.join(store.songs_root, 'test_song')
+    write_song(song_dir, song_name: 'Test Song', include_zip: true)
+    verified_zip = store.open_zip('test_song')
+
+    assert_raises(IOError) do
+      verified_zip.each { raise IOError, 'client disconnected' }
+    end
+
+    assert verified_zip.closed?
+  end
+
+  test 'open zip rejects a file replaced between validation and open' do
+    store = UserSongStore.new(@repo_root)
+    song_dir = File.join(store.songs_root, 'test_song')
+    write_song(song_dir, song_name: 'Test Song', include_zip: true)
+    zip_path = File.join(song_dir, 'sounds.zip')
+    original_zip_path = File.join(song_dir, 'original-sounds.zip')
+    outside_zip = File.join(@outside_root, 'replacement.zip')
+    File.binwrite(outside_zip, 'replacement zip')
+    original_open = File.method(:open)
+    replaced = false
+    replacing_open = proc do |path, *args, **kwargs, &block|
+      if path == zip_path && !replaced
+        File.rename(zip_path, original_zip_path)
+        File.symlink(outside_zip, zip_path)
+        replaced = true
+      end
+      original_open.call(path, *args, **kwargs, &block)
+    end
+
+    error = File.stub(:open, replacing_open) do
+      assert_raises(RuntimeError) { store.open_zip('test_song') }
+    end
+
+    assert replaced
+    assert_match(/Unsafe song storage path/, error.message)
+    assert_equal 'replacement zip', File.binread(outside_zip)
+  end
+
+  test 'open zip keeps streaming the original descriptor after pathname replacement' do
+    store = UserSongStore.new(@repo_root)
+    song_dir = File.join(store.songs_root, 'test_song')
+    write_song(song_dir, song_name: 'Test Song', include_zip: true)
+    zip_path = File.join(song_dir, 'sounds.zip')
+    original_zip_path = File.join(song_dir, 'original-sounds.zip')
+    original_bytes = File.binread(zip_path)
+    outside_zip = File.join(@outside_root, 'replacement.zip')
+    File.binwrite(outside_zip, 'replacement zip')
+
+    verified_zip = store.open_zip('test_song')
+    File.rename(zip_path, original_zip_path)
+    File.symlink(outside_zip, zip_path)
+
+    assert_equal original_bytes, verified_zip.each.to_a.join
+    assert verified_zip.closed?
+    assert_equal 'replacement zip', File.binread(zip_path)
   end
 
   test 'normal songs remain available while installed rejects a terminal directory symlink' do
@@ -214,10 +302,42 @@ class UserSongStoreConfinementTest < ActiveSupport::TestCase
     assert_match(/was not found/, directory_error.message)
   end
 
+  test 'open zip preserves missing symlink dangling symlink and non-regular rejection' do
+    store = UserSongStore.new(@repo_root)
+
+    assert_raises(RuntimeError) { store.open_zip('missing_song') }
+
+    song_dir = File.join(store.songs_root, 'test_song')
+    FileUtils.mkdir_p(song_dir)
+    assert_raises(RuntimeError) { store.open_zip('test_song') }
+
+    zip_path = File.join(song_dir, 'sounds.zip')
+    FileUtils.mkdir_p(zip_path)
+    assert_raises(RuntimeError) { store.open_zip('test_song') }
+    Dir.rmdir(zip_path)
+
+    outside_zip = File.join(@outside_root, 'outside.zip')
+    File.binwrite(outside_zip, 'outside zip')
+    File.symlink(outside_zip, zip_path)
+    assert_raises(RuntimeError) { store.open_zip('test_song') }
+    File.unlink(zip_path)
+
+    File.symlink(File.join(@outside_root, 'missing.zip'), zip_path)
+    assert_raises(RuntimeError) { store.open_zip('test_song') }
+  end
+
   test 'zip path rejects an unsafe filename through the shared filename validator' do
     store = UserSongStore.new(@repo_root)
 
     error = assert_raises(RuntimeError) { store.zip_path('../evil') }
+
+    assert_match(/Invalid song filename/, error.message)
+  end
+
+  test 'open zip rejects an unsafe filename through the shared filename validator' do
+    store = UserSongStore.new(@repo_root)
+
+    error = assert_raises(RuntimeError) { store.open_zip('../evil') }
 
     assert_match(/Invalid song filename/, error.message)
   end
