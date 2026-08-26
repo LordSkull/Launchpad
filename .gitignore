@@ -16,6 +16,9 @@
 !/log/.keep
 /tmp
 
+# Ignore Spring runtime state.
+/spring/
+
 # User-installed Launchpad songs
 /user_data/songs/*
 !/user_data/songs/.gitkeep
