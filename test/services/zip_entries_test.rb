@@ -44,10 +44,32 @@ class ZipEntriesTest < ActiveSupport::TestCase
     assert_equal ['samples/'], read_zip(archive(entries))
   end
 
-  test 'normalizes backslashes in entry names' do
-    entries = [central_directory_entry('folder\\sample.mp3')]
+  test 'rejects backslashes in decoded entry names before normalization' do
+    names = [
+      'sounds\\chain1\\kick.mp3',
+      'metadata\\item.txt',
+      'samples\\',
+      '\\kick.mp3',
+      '.\\kick.mp3',
+      '..\\kick.mp3'
+    ]
 
-    assert_equal ['folder/sample.mp3'], read_zip(archive(entries))
+    names.each do |name|
+      error = assert_raises(ZipEntries::InvalidEntryName) do
+        read_zip(archive([central_directory_entry(name)]))
+      end
+
+      assert_kind_of ZipEntries::InvalidArchive, error
+    end
+  end
+
+  test 'continues accepting forward slashes in entry names' do
+    entries = [
+      central_directory_entry('sounds/chain1/kick.mp3'),
+      central_directory_entry('metadata/item.txt')
+    ]
+
+    assert_equal ['sounds/chain1/kick.mp3', 'metadata/item.txt'], read_zip(archive(entries))
   end
 
   test 'preserves duplicate entry names' do

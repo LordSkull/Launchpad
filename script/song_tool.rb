@@ -18,6 +18,7 @@ KEY_LABELS = [
 
 class ZipEntries
   class InvalidArchive < RuntimeError; end
+  class InvalidEntryName < InvalidArchive; end
 
   EOCD_SIG = [0x06054b50].pack('V')
   EOCD_MIN_SIZE = 22
@@ -60,6 +61,8 @@ class ZipEntries
              else
                raw_name.force_encoding(Encoding::BINARY).encode(Encoding::UTF_8, invalid: :replace, undef: :replace)
              end
+      raise InvalidEntryName if name.include?('\\')
+
       entries << name.tr('\\', '/')
       pos += 46 + name_len + extra_len + comment_len
     end
@@ -90,6 +93,10 @@ class SongManifest
     @data = {}
     @entries = []
     @errors = ['Manifest JSON could not be parsed.']
+  rescue ZipEntries::InvalidEntryName
+    @data ||= {}
+    @entries = []
+    @errors = ['ZIP entry names must use forward slashes (/), not backslashes (\\).']
   rescue ZipEntries::InvalidArchive
     @data ||= {}
     @entries = []
