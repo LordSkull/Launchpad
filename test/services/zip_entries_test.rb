@@ -59,6 +59,24 @@ class ZipEntriesTest < ActiveSupport::TestCase
     assert_equal ['kick.mp3', 'kick.mp3'], read_zip(archive(entries))
   end
 
+  test 'preserves duplicate names with different size metadata' do
+    entries = [
+      central_directory_entry('kick.mp3', compressed_size: 5, uncompressed_size: 5),
+      central_directory_entry('kick.mp3', compressed_size: 17, uncompressed_size: 23)
+    ]
+
+    assert_equal ['kick.mp3', 'kick.mp3'], read_zip(archive(entries))
+  end
+
+  test 'preserves case-distinct entry names' do
+    entries = [
+      central_directory_entry('kick.mp3'),
+      central_directory_entry('KICK.MP3')
+    ]
+
+    assert_equal ['kick.mp3', 'KICK.MP3'], read_zip(archive(entries))
+  end
+
   test 'returns parent traversal and absolute path-like names unchanged' do
     entries = [
       central_directory_entry('../evil.mp3'),

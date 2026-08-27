@@ -8,6 +8,17 @@ var Zip_Space = new function(){
       inflater: ['zip/src/z-worker.js', 'zip/src/inflate.js']
     }; 
   }
+
+  this.findDuplicateEntryName = function(entries) {
+    var seen = Object.create(null);
+    for(var i = 0; i < entries.length; i++) {
+      var filename = entries[i].filename;
+      if(Object.prototype.hasOwnProperty.call(seen, filename))
+        return filename;
+      seen[filename] = true;
+    }
+    return null;
+  }
   
   // recursively iterate over the entries
   interateEntries = function(entries, i, reader, callback){
@@ -45,6 +56,15 @@ var Zip_Space = new function(){
           $(".soundPack").html("Extracting Sounds...");
           // get all entries from the zip
           reader.getEntries(function(entries) {
+            var duplicateEntry = Zip_Space.findDuplicateEntryName(entries);
+            if(duplicateEntry !== null) {
+              Zip_Space.dataArray = {};
+              console.error("Duplicate ZIP entry: " + duplicateEntry);
+              $(".soundPack").html("ZIP load failed.");
+              $("#error_msg").text("Duplicate ZIP entry: " + duplicateEntry);
+              reader.close(function() {});
+              return;
+            }
             interateEntries(entries, 0, reader, callback);
           });
         }, function(error) {
