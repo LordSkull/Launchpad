@@ -97,10 +97,13 @@ class ZipEntriesTest < ActiveSupport::TestCase
     end
   end
 
-  test 'a truncated EOCD currently raises NoMethodError' do
+  test 'a truncated EOCD raises a typed invalid archive error' do
     bytes = [EOCD_SIGNATURE].pack('V')
 
-    assert_raises(NoMethodError) { read_zip(bytes) }
+    error = assert_raises(ZipEntries::InvalidArchive) { read_zip(bytes) }
+
+    assert_kind_of RuntimeError, error
+    assert_match(/truncated/, error.message)
   end
 
   test 'rejects a truncated central directory header' do

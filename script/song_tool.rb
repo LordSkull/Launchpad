@@ -17,19 +17,26 @@ KEY_LABELS = [
 ].freeze
 
 class ZipEntries
+  class InvalidArchive < RuntimeError; end
+
   EOCD_SIG = [0x06054b50].pack('V')
+  EOCD_MIN_SIZE = 22
   CEN_SIG = 0x02014b50
 
   def self.read(path)
     data = File.binread(path)
     tail_start = [data.bytesize - 65_557, 0].max
     eocd_at = data.rindex(EOCD_SIG, data.bytesize - 1)
-    raise "Not a supported ZIP file (EOCD not found): #{path}" unless eocd_at && eocd_at >= tail_start
+    raise InvalidArchive, 'Not a supported ZIP file (EOCD not found)' unless eocd_at && eocd_at >= tail_start
 
-    eocd = data.byteslice(eocd_at, 22)
+    eocd = data.byteslice(eocd_at, EOCD_MIN_SIZE)
+    unless eocd && eocd.bytesize == EOCD_MIN_SIZE
+      raise InvalidArchive, 'ZIP end-of-central-directory record is truncated'
+    end
+
     cd_size = eocd.byteslice(12, 4).unpack1('V')
     cd_offset = eocd.byteslice(16, 4).unpack1('V')
-    raise 'ZIP64 archives are not supported by this MVP' if cd_size == 0xFFFFFFFF || cd_offset == 0xFFFFFFFF
+    raise InvalidArchive, 'ZIP64 archives are not supported by this MVP' if cd_size == 0xFFFFFFFF || cd_offset == 0xFFFFFFFF
 
     entries = []
     pos = cd_offset
@@ -37,15 +44,16 @@ class ZipEntries
 
     while pos < finish
       header = data.byteslice(pos, 46)
-      raise "Invalid central directory at byte #{pos}" unless header && header.bytesize == 46
+      raise InvalidArchive, "Invalid central directory at byte #{pos}" unless header && header.bytesize == 46
       sig = header.byteslice(0, 4).unpack1('V')
-      raise "Unexpected ZIP central-directory signature at byte #{pos}" unless sig == CEN_SIG
+      raise InvalidArchive, "Unexpected ZIP central-directory signature at byte #{pos}" unless sig == CEN_SIG
 
       flags = header.byteslice(8, 2).unpack1('v')
       name_len = header.byteslice(28, 2).unpack1('v')
       extra_len = header.byteslice(30, 2).unpack1('v')
       comment_len = header.byteslice(32, 2).unpack1('v')
       raw_name = data.byteslice(pos + 46, name_len)
+      raise InvalidArchive, "Invalid central-directory filename at byte #{pos}" unless raw_name && raw_name.bytesize == name_len
 
       name = if (flags & 0x0800) != 0
                raw_name.force_encoding(Encoding::UTF_8).scrub
@@ -68,17 +76,24 @@ class SongManifest
     @zip_path = File.expand_path(zip_path)
     @errors = []
     @warnings = []
+    @invalid_json = false
     @data = JSON.parse(File.read(@json_path, encoding: 'UTF-8'))
+    unless @data.is_a?(Hash)
+      @data = {}
+      @entries = []
+      @errors = ['Manifest JSON must contain an object.']
+      return
+    end
     @entries = ZipEntries.read(@zip_path)
-  rescue JSON::ParserError => e
+  rescue JSON::ParserError
+    @invalid_json = true
     @data = {}
     @entries = []
-    @errors = ["Invalid JSON: #{e.message}"]
-  rescue StandardError => e
+    @errors = ['Manifest JSON could not be parsed.']
+  rescue ZipEntries::InvalidArchive
     @data ||= {}
-    @entries ||= []
-    @errors ||= []
-    @errors << e.message
+    @entries = []
+    @errors = ['ZIP archive is invalid or unsupported.']
   end
 
   def validate!
@@ -95,6 +110,10 @@ class SongManifest
 
   def valid?
     errors.empty?
+  end
+
+  def invalid_json?
+    @invalid_json
   end
 
   def filename

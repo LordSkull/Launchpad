@@ -1,6 +1,7 @@
 require 'test_helper'
 require 'tmpdir'
 require 'json'
+require 'minitest/mock'
 require Rails.root.join('script', 'song_tool').to_s
 
 class SongManifestTest < ActiveSupport::TestCase
@@ -164,6 +165,77 @@ class SongManifestTest < ActiveSupport::TestCase
         refute manifest.valid?, "Expected #{filename.inspect} to be invalid"
         assert manifest.errors.any? { |error| error.include?('filename') },
                "Expected a filename error for #{filename.inspect}, got: #{manifest.errors.inspect}"
+      end
+    end
+  end
+
+  test 'malformed JSON has structured state and client safe detail' do
+    Dir.mktmpdir do |root|
+      manifest_path = File.join(root, 'song.json')
+      zip_path = File.join(root, 'sounds.zip')
+      File.write(manifest_path, '{invalid', mode: 'w', encoding: 'UTF-8')
+      write_zip(zip_path, [])
+
+      manifest = SongManifest.new(manifest_path, zip_path).validate!
+
+      assert manifest.invalid_json?
+      refute manifest.valid?
+      assert_equal ['Manifest JSON could not be parsed.'], manifest.errors
+      refute_match(/unexpected token|line \d+|column \d+/i, manifest.errors.join(' '))
+    end
+  end
+
+  test 'malformed ZIP errors contain no path or Ruby implementation detail' do
+    Dir.mktmpdir do |root|
+      manifest_path = File.join(root, 'song.json')
+      zip_path = File.join(root, 'private-upload-name.zip')
+      File.write(manifest_path, JSON.generate(valid_manifest_hash), mode: 'w', encoding: 'UTF-8')
+      File.binwrite(zip_path, 'not a zip')
+
+      manifest = SongManifest.new(manifest_path, zip_path).validate!
+
+      refute manifest.invalid_json?
+      refute manifest.valid?
+      assert_equal ['ZIP archive is invalid or unsupported.'], manifest.errors
+      refute_includes manifest.errors.join(' '), root
+    end
+  end
+
+  test 'truncated ZIP errors hide NoMethodError details' do
+    Dir.mktmpdir do |root|
+      manifest_path = File.join(root, 'song.json')
+      zip_path = File.join(root, 'truncated.zip')
+      File.write(manifest_path, JSON.generate(valid_manifest_hash), mode: 'w', encoding: 'UTF-8')
+      File.binwrite(zip_path, [0x06054b50].pack('V'))
+
+      manifest = SongManifest.new(manifest_path, zip_path).validate!
+
+      refute manifest.valid?
+      assert_equal ['ZIP archive is invalid or unsupported.'], manifest.errors
+      refute_match(/NoMethodError|undefined method|unpack/i, manifest.errors.join(' '))
+    end
+  end
+
+  test 'unexpected ZIP filesystem errors propagate' do
+    Dir.mktmpdir do |root|
+      manifest_path = File.join(root, 'song.json')
+      missing_zip_path = File.join(root, 'missing.zip')
+      File.write(manifest_path, JSON.generate(valid_manifest_hash), mode: 'w', encoding: 'UTF-8')
+
+      assert_raises(Errno::ENOENT) { SongManifest.new(manifest_path, missing_zip_path) }
+    end
+  end
+
+  test 'unexpected ZIP parser programming errors propagate' do
+    Dir.mktmpdir do |root|
+      manifest_path = File.join(root, 'song.json')
+      zip_path = File.join(root, 'sounds.zip')
+      File.write(manifest_path, JSON.generate(valid_manifest_hash), mode: 'w', encoding: 'UTF-8')
+      write_zip(zip_path, [])
+      parser_failure = proc { |_path| raise NoMethodError, 'unexpected programmer failure' }
+
+      ZipEntries.stub(:read, parser_failure) do
+        assert_raises(NoMethodError) { SongManifest.new(manifest_path, zip_path) }
       end
     end
   end

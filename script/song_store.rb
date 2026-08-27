@@ -5,6 +5,12 @@ require 'fileutils'
 require 'tmpdir'
 
 class UserSongStore
+  class Error < RuntimeError; end
+  class InvalidFilename < Error; end
+  class NotFound < Error; end
+  class Conflict < Error; end
+  class UnsafePath < Error; end
+
   attr_reader :repo_root, :songs_root
 
   class VerifiedZip
@@ -90,7 +96,7 @@ class UserSongStore
     filename = normalize_filename(filename)
     target_dir = File.join(songs_root, filename)
     target_stat = lstat(target_dir)
-    raise "User song '#{filename}' is not installed." unless target_stat
+    raise NotFound, "User song '#{filename}' is not installed." unless target_stat
 
     if target_stat.symlink?
       File.unlink(target_dir)
@@ -98,7 +104,7 @@ class UserSongStore
     end
 
     unless target_stat.directory? && safe_real_path?(target_dir, real_root, :directory)
-      raise "User song '#{filename}' is not installed."
+      raise NotFound, "User song '#{filename}' is not installed."
     end
 
     ensure_safe_root!
@@ -114,7 +120,7 @@ class UserSongStore
     zip, expected_stat = validated_zip_entry(filename)
     io = File.open(zip, 'rb')
     opened_stat = io.stat
-    raise 'Unsafe song storage path.' unless same_file?(expected_stat, opened_stat)
+    raise NotFound, "User song '#{filename}' was not found." unless same_file?(expected_stat, opened_stat)
 
     verified_zip = VerifiedZip.new(io, opened_stat.size, opened_stat.mtime)
     io = nil
@@ -144,18 +150,18 @@ class UserSongStore
     filename = normalize_filename(filename)
     song_dir = File.join(songs_root, filename)
     song_stat = lstat(song_dir)
-    raise "User song '#{filename}' was not found." unless song_stat
-    raise 'Unsafe song storage path.' if song_stat.symlink?
+    raise NotFound, "User song '#{filename}' was not found." unless song_stat
+    raise NotFound, "User song '#{filename}' was not found." if song_stat.symlink?
     unless song_stat.directory? && safe_real_path?(song_dir, real_root, :directory)
-      raise "User song '#{filename}' was not found."
+      raise NotFound, "User song '#{filename}' was not found."
     end
 
     zip = File.join(song_dir, 'sounds.zip')
     zip_stat = lstat(zip)
-    raise "User song '#{filename}' was not found." unless zip_stat
-    raise 'Unsafe song storage path.' if zip_stat.symlink?
+    raise NotFound, "User song '#{filename}' was not found." unless zip_stat
+    raise NotFound, "User song '#{filename}' was not found." if zip_stat.symlink?
     unless zip_stat.file? && safe_real_path?(zip, real_root, :file)
-      raise "User song '#{filename}' was not found."
+      raise NotFound, "User song '#{filename}' was not found."
     end
 
     [zip, zip_stat]
@@ -165,16 +171,16 @@ class UserSongStore
     ensure_safe_root!
     filename = normalize_filename(manifest.filename)
     target_dir = File.join(songs_root, filename)
-    raise "Song '#{filename}' is already installed." if path_entry_exists?(target_dir)
+    raise Conflict, "Song '#{filename}' is already installed." if path_entry_exists?(target_dir)
 
     public_zip = File.join(repo_root, 'public', 'zip', 'sounds', "#{filename}.zip")
     if File.exist?(public_zip) && !allow_public_zip_conflict
-      raise "Filename '#{filename}' conflicts with a built-in song. Choose another ZIP filename."
+      raise Conflict, "Filename '#{filename}' conflicts with a built-in song. Choose another ZIP filename."
     end
 
     number = manifest.song_number || next_song_number
     if existing_song_numbers.include?(number)
-      raise "song_number #{number} already exists. Leave Song ID blank to auto-assign, or choose another ID."
+      raise Conflict, "song_number #{number} already exists. Leave Song ID blank to auto-assign, or choose another ID."
     end
 
     data = deep_copy(manifest.data)
@@ -188,7 +194,7 @@ class UserSongStore
 
     begin
       real_root = ensure_safe_root!
-      raise 'Unsafe song storage path.' unless safe_real_path?(tmp_dir, real_root, :directory)
+      raise UnsafePath, 'Unsafe song storage path.' unless safe_real_path?(tmp_dir, real_root, :directory)
 
       create_exclusive_file(File.join(tmp_dir, 'song.json')) do |manifest_file|
         manifest_file.write(JSON.pretty_generate(data) + "\n")
@@ -198,8 +204,8 @@ class UserSongStore
       end
 
       real_root = ensure_safe_root!
-      raise 'Unsafe song storage path.' unless safe_real_path?(tmp_dir, real_root, :directory)
-      raise "Song '#{filename}' is already installed." if path_entry_exists?(target_dir)
+      raise UnsafePath, 'Unsafe song storage path.' unless safe_real_path?(tmp_dir, real_root, :directory)
+      raise Conflict, "Song '#{filename}' is already installed." if path_entry_exists?(target_dir)
 
       FileUtils.mv(tmp_dir, target_dir)
     rescue StandardError
@@ -225,7 +231,7 @@ class UserSongStore
         real_root = ensure_safe_root!
         lock_stat = lstat(lock_path)
         unless safe_regular_entry?(lock_path, real_root, lock_stat) && same_file?(lock_stat, lock.stat)
-          raise 'Unsafe song storage path.'
+          raise UnsafePath, 'Unsafe song storage path.'
         end
         yield
       ensure
@@ -240,12 +246,12 @@ class UserSongStore
     loop do
       lock_stat = lstat(lock_path)
       if lock_stat
-        raise 'Unsafe song storage path.' unless safe_regular_entry?(lock_path, real_root, lock_stat)
+        raise UnsafePath, 'Unsafe song storage path.' unless safe_regular_entry?(lock_path, real_root, lock_stat)
 
         lock = File.open(lock_path, File::RDWR)
         unless same_file?(lock_stat, lock.stat)
           lock.close
-          raise 'Unsafe song storage path.'
+          raise UnsafePath, 'Unsafe song storage path.'
         end
         return lock
       end
@@ -255,7 +261,7 @@ class UserSongStore
         created_stat = lstat(lock_path)
         unless safe_regular_entry?(lock_path, real_root, created_stat) && same_file?(created_stat, lock.stat)
           lock.close
-          raise 'Unsafe song storage path.'
+          raise UnsafePath, 'Unsafe song storage path.'
         end
         return lock
       rescue Errno::EEXIST
@@ -264,7 +270,7 @@ class UserSongStore
     end
   rescue SystemCallError
     lock.close if defined?(lock) && lock && !lock.closed?
-    raise 'Unsafe song storage path.'
+    raise UnsafePath, 'Unsafe song storage path.'
   end
 
   def create_safe_root!
@@ -274,7 +280,7 @@ class UserSongStore
     while lstat(path).nil?
       missing << path
       parent = File.dirname(path)
-      raise 'Unsafe song storage path.' if parent == path
+      raise UnsafePath, 'Unsafe song storage path.' if parent == path
       path = parent
     end
 
@@ -293,10 +299,10 @@ class UserSongStore
     path_stat = File.lstat(path)
     expected = File.expand_path(path)
     unless path_stat.directory? && !path_stat.symlink? && File.realpath(path) == expected
-      raise 'Unsafe song storage path.'
+      raise UnsafePath, 'Unsafe song storage path.'
     end
   rescue SystemCallError
-    raise 'Unsafe song storage path.'
+    raise UnsafePath, 'Unsafe song storage path.'
   end
 
   def ensure_safe_root!
@@ -305,12 +311,12 @@ class UserSongStore
     expected_root = File.expand_path(songs_root)
 
     unless root_stat.directory? && !root_stat.symlink? && real_root == expected_root
-      raise 'Unsafe song storage path.'
+      raise UnsafePath, 'Unsafe song storage path.'
     end
 
     real_root
   rescue SystemCallError
-    raise 'Unsafe song storage path.'
+    raise UnsafePath, 'Unsafe song storage path.'
   end
 
   def safe_real_path?(path, real_root, type)
@@ -371,7 +377,7 @@ class UserSongStore
   def normalize_filename(value)
     filename = value.to_s
     unless valid_filename?(filename)
-      raise "Invalid song filename '#{filename}'."
+      raise InvalidFilename, "Invalid song filename '#{filename}'."
     end
     filename
   end

@@ -64,6 +64,19 @@ class LocalSongsApiCharacterizationTest < ActionDispatch::IntegrationTest
     assert_guard_unchanged
   end
 
+  test 'index skips a malformed individual entry while returning valid songs' do
+    install_song(valid_manifest(filename: 'valid_song', song_name: 'Valid Song', song_number: 40))
+    malformed_dir = File.join(@store.songs_root, 'malformed_song')
+    FileUtils.mkdir_p(malformed_dir)
+    File.write(File.join(malformed_dir, 'song.json'), '{invalid', mode: 'w', encoding: 'UTF-8')
+    File.binwrite(File.join(malformed_dir, 'sounds.zip'), 'malformed entry')
+
+    with_local_api { get '/dev/song_imports' }
+
+    assert_response :success
+    assert_equal ['valid_song'], parsed_response.fetch('songs').map { |song| song.fetch('filename') }
+  end
+
   test 'create installs a valid multipart song package in the temporary store' do
     data = valid_manifest(filename: 'api_song', song_name: 'API Song', song_number: 42)
     zip_path = write_minimal_zip(File.join(@temporary_root, 'uploads', 'api-song.zip'))
@@ -151,6 +164,109 @@ class LocalSongsApiCharacterizationTest < ActionDispatch::IntegrationTest
     assert_guard_unchanged
   end
 
+  test 'create returns bad request for missing manifest and missing zip' do
+    zip_path = write_minimal_zip(File.join(@temporary_root, 'uploads', 'missing-input.zip'))
+    upload = Rack::Test::UploadedFile.new(zip_path, 'application/zip', true)
+
+    with_local_api { post '/dev/song_imports', params: { zip: upload } }
+    assert_response :bad_request
+    assert_equal({ 'ok' => false, 'error' => 'Missing manifest JSON.' }, parsed_response)
+
+    with_local_api { post '/dev/song_imports', params: { manifest: '{}' } }
+    assert_response :bad_request
+    assert_equal({ 'ok' => false, 'error' => 'Missing ZIP upload.' }, parsed_response)
+  ensure
+    upload.close if upload
+  end
+
+  test 'create returns payload too large for oversized manifest and zip' do
+    zip_path = write_minimal_zip(File.join(@temporary_root, 'uploads', 'oversized.zip'))
+    upload = Rack::Test::UploadedFile.new(zip_path, 'application/zip', true)
+    oversized_manifest = 'x' * (LocalSongsController::MAX_MANIFEST_BYTES + 1)
+
+    with_local_api do
+      post '/dev/song_imports', params: { manifest: oversized_manifest, zip: upload }
+    end
+    assert_response 413
+    assert_equal({ 'ok' => false, 'error' => 'Manifest is too large.' }, parsed_response)
+
+    upload.close
+    oversized_zip_path = File.join(@temporary_root, 'uploads', 'oversized-payload.zip')
+    File.open(oversized_zip_path, 'wb') { |file| file.truncate(LocalSongsController::MAX_ZIP_BYTES + 1) }
+    upload = Rack::Test::UploadedFile.new(oversized_zip_path, 'application/zip', true)
+    with_local_api do
+      post '/dev/song_imports', params: { manifest: '{}', zip: upload }
+    end
+    assert_response 413
+    assert_equal({ 'ok' => false, 'error' => 'ZIP is larger than 50 MB.' }, parsed_response)
+  ensure
+    upload.close if upload
+  end
+
+  test 'create distinguishes malformed JSON from semantic and malformed package validation' do
+    zip_path = write_minimal_zip(File.join(@temporary_root, 'uploads', 'validation.zip'))
+
+    post_raw_song('{invalid', zip_path)
+    assert_response :bad_request
+    assert_equal false, parsed_response['ok']
+    assert_equal 'Invalid manifest JSON.', parsed_response['error']
+    assert_equal ['Manifest JSON could not be parsed.'], parsed_response['errors']
+    assert_equal [], parsed_response['warnings']
+
+    post_song({}, zip_path)
+    assert_response :unprocessable_entity
+    assert_equal 'Song package is invalid.', parsed_response['error']
+
+    malformed_zip = File.join(@temporary_root, 'uploads', 'not-a-zip.zip')
+    File.binwrite(malformed_zip, 'not a zip')
+    post_song(valid_manifest(filename: 'bad_zip', song_name: 'Bad ZIP', song_number: 47), malformed_zip)
+    assert_response :unprocessable_entity
+    assert_equal ['ZIP archive is invalid or unsupported.'], parsed_response['errors']
+    refute_includes response.body, malformed_zip
+  end
+
+  test 'create returns conflict for installed built-in and song number collisions' do
+    first_zip = install_song(valid_manifest(filename: 'existing_song', song_name: 'Existing', song_number: 48))
+    logger = CapturingLogger.new(Rails.logger)
+
+    Rails.stub(:logger, logger) do
+      post_song(valid_manifest(filename: 'existing_song', song_name: 'Duplicate', song_number: 49), first_zip)
+      assert_response :conflict
+      assert_match(/already installed/, parsed_response['error'])
+
+      built_in_dir = File.join(@temporary_root, 'public', 'zip', 'sounds')
+      FileUtils.mkdir_p(built_in_dir)
+      File.binwrite(File.join(built_in_dir, 'built_in_name.zip'), 'built in')
+      post_song(valid_manifest(filename: 'built_in_name', song_name: 'Built In Conflict', song_number: 49), first_zip)
+      assert_response :conflict
+      assert_match(/conflicts with a built-in song/, parsed_response['error'])
+
+      post_song(valid_manifest(filename: 'number_conflict', song_name: 'Number Conflict', song_number: 48), first_zip)
+      assert_response :conflict
+      assert_match(/song_number 48 already exists/, parsed_response['error'])
+    end
+
+    assert_empty logger.errors
+  end
+
+  test 'create returns a safe internal error and logs unexpected failures' do
+    zip_path = write_minimal_zip(File.join(@temporary_root, 'uploads', 'internal.zip'))
+    logger = CapturingLogger.new(Rails.logger)
+    failure = proc { |_manifest| raise IOError, 'secret create path C:/private/song.zip' }
+
+    Rails.stub(:logger, logger) do
+      @store.stub(:install!, failure) do
+        post_song(valid_manifest(filename: 'internal', song_name: 'Internal', song_number: 50), zip_path)
+      end
+    end
+
+    assert_response :internal_server_error
+    assert_equal({ 'ok' => false, 'error' => 'Internal server error.' }, parsed_response)
+    refute_includes response.body, 'secret create path'
+    assert logger.errors.any? { |line| line.include?('Song import failed') && line.include?('IOError') && line.include?('secret create path') }
+    assert logger.errors.any? { |line| line.include?(__FILE__) }
+  end
+
   test 'destroy removes an existing song and preserves the store root and siblings' do
     install_song(valid_manifest(filename: 'remove_me', song_name: 'Remove Me', song_number: 44))
     sibling_path = File.join(@store.songs_root, 'keep.txt')
@@ -186,6 +302,30 @@ class LocalSongsApiCharacterizationTest < ActionDispatch::IntegrationTest
     assert_equal({ 'ok' => false, 'error' => 'Song not found.' }, parsed_response)
     assert_empty Dir.children(@store.songs_root)
     assert_guard_unchanged
+  end
+
+  test 'destroy remains non-idempotent and returns not found on the second delete' do
+    install_song(valid_manifest(filename: 'delete_twice', song_name: 'Delete Twice', song_number: 51))
+
+    with_local_api { delete '/dev/song_imports/delete_twice' }
+    assert_response :success
+
+    with_local_api { delete '/dev/song_imports/delete_twice' }
+    assert_response :not_found
+    assert_equal({ 'ok' => false, 'error' => 'Song not found.' }, parsed_response)
+  end
+
+  test 'destroy returns a safe internal error for delete failure' do
+    install_song(valid_manifest(filename: 'remove_failure', song_name: 'Remove Failure', song_number: 52))
+    failure = proc { |_filename| raise IOError, 'secret delete path /private/song' }
+
+    @store.stub(:remove!, failure) do
+      with_local_api { delete '/dev/song_imports/remove_failure' }
+    end
+
+    assert_response :internal_server_error
+    assert_equal({ 'ok' => false, 'error' => 'Internal server error.' }, parsed_response)
+    refute_includes response.body, 'secret delete path'
   end
 
   test 'destroy does not allow a malformed catalog entry to alias a valid sibling' do
@@ -331,6 +471,48 @@ class LocalSongsApiCharacterizationTest < ActionDispatch::IntegrationTest
     assert_guard_unchanged
   end
 
+  test 'zip returns not found when an installed song has no sounds zip' do
+    song_dir = File.join(@store.songs_root, 'missing_archive')
+    FileUtils.mkdir_p(song_dir)
+    File.write(File.join(song_dir, 'song.json'), JSON.generate('song_name' => 'Missing Archive'))
+
+    with_local_api { get '/zip/sounds/missing_archive.zip' }
+
+    assert_response :not_found
+    assert_empty response.body
+  end
+
+  test 'index returns a safe internal error for a root or unexpected store failure' do
+    failure = proc { raise UserSongStore::UnsafePath, 'secret catalog root /private/songs' }
+
+    @store.stub(:list, failure) do
+      with_local_api { get '/dev/song_imports' }
+    end
+
+    assert_response :internal_server_error
+    assert_equal 'application/json', response.media_type
+    assert_equal({ 'ok' => false, 'error' => 'Internal server error.' }, parsed_response)
+    refute_includes response.body, 'secret catalog root'
+  end
+
+  test 'zip returns empty not found for malformed filename' do
+    with_local_api { get '/zip/sounds/%20invalid.zip' }
+
+    assert_response :not_found
+    assert_empty response.body
+  end
+
+  test 'zip returns empty internal server error for unexpected pre-response failure' do
+    failure = proc { |_filename| raise UserSongStore::UnsafePath, 'secret zip path /private/sounds.zip' }
+
+    @store.stub(:open_zip, failure) do
+      with_local_api { get '/zip/sounds/failing_song.zip' }
+    end
+
+    assert_response :internal_server_error
+    assert_empty response.body
+  end
+
   private
 
   def with_local_api
@@ -344,11 +526,15 @@ class LocalSongsApiCharacterizationTest < ActionDispatch::IntegrationTest
   end
 
   def post_song(data, zip_path)
+    post_raw_song(JSON.generate(data), zip_path)
+  end
+
+  def post_raw_song(manifest_json, zip_path)
     upload = Rack::Test::UploadedFile.new(zip_path, 'application/zip', true)
 
     with_local_api do
       post '/dev/song_imports', params: {
-        manifest: JSON.generate(data),
+        manifest: manifest_json,
         zip: upload
       }
     end
@@ -401,5 +587,31 @@ class LocalSongsApiCharacterizationTest < ActionDispatch::IntegrationTest
 
   def assert_guard_unchanged
     assert_equal 'keep', File.read(@guard_path, encoding: 'UTF-8')
+  end
+
+  class CapturingLogger
+    attr_reader :errors, :warnings
+
+    def initialize(delegate)
+      @delegate = delegate
+      @errors = []
+      @warnings = []
+    end
+
+    def error(message)
+      errors << message
+    end
+
+    def warn(message)
+      warnings << message
+    end
+
+    def method_missing(name, *args, **kwargs, &block)
+      @delegate.public_send(name, *args, **kwargs, &block)
+    end
+
+    def respond_to_missing?(name, include_private = false)
+      @delegate.respond_to?(name, include_private) || super
+    end
   end
 end

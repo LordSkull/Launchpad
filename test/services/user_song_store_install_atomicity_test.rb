@@ -40,7 +40,7 @@ class UserSongStoreInstallAtomicityTest < ActiveSupport::TestCase
     marker_path = File.join(destination, 'existing.txt')
     File.write(marker_path, 'existing destination', mode: 'w', encoding: 'UTF-8')
 
-    error = assert_raises(RuntimeError) { @store.install!(@manifest) }
+    error = assert_raises(UserSongStore::Conflict) { @store.install!(@manifest) }
 
     assert_match(/already installed/, error.message)
     assert_equal 'existing destination', File.read(marker_path, encoding: 'UTF-8')
@@ -48,6 +48,32 @@ class UserSongStoreInstallAtomicityTest < ActiveSupport::TestCase
     assert_empty temp_directories
     assert_install_lock_available
     assert_sibling_unchanged
+  end
+
+  test 'built-in filename collision raises a typed conflict' do
+    built_in_dir = File.join(@temporary_root, 'public', 'zip', 'sounds')
+    FileUtils.mkdir_p(built_in_dir)
+    File.binwrite(File.join(built_in_dir, 'test_song.zip'), 'built in')
+
+    error = assert_raises(UserSongStore::Conflict) { @store.install!(@manifest) }
+
+    assert_kind_of RuntimeError, error
+    assert_match(/conflicts with a built-in song/, error.message)
+    refute File.exist?(destination_path)
+    assert_empty temp_directories
+  end
+
+  test 'song number collision raises a typed conflict' do
+    first_result = @store.install!(@manifest)
+    second_manifest = build_valid_manifest('second_song')
+    second_manifest.data['song_number'] = first_result.fetch('song_number')
+
+    error = assert_raises(UserSongStore::Conflict) { @store.install!(second_manifest) }
+
+    assert_kind_of RuntimeError, error
+    assert_match(/song_number #{first_result.fetch('song_number')} already exists/, error.message)
+    refute File.exist?(File.join(@store.songs_root, 'second_song'))
+    assert_empty temp_directories
   end
 
   test 'install does not reuse a predictable pre-existing staging directory or its symlink leaves' do
@@ -170,7 +196,7 @@ class UserSongStoreInstallAtomicityTest < ActiveSupport::TestCase
     move_probe = proc { |_source, _destination, *_args, **_kwargs| move_called = true }
 
     result = nil
-    error = assert_raises(RuntimeError) do
+    error = assert_raises(UserSongStore::Conflict) do
       IO.stub(:copy_stream, racing_copy) do
         FileUtils.stub(:mv, move_probe) { result = @store.install!(@manifest) }
       end
@@ -194,7 +220,7 @@ class UserSongStoreInstallAtomicityTest < ActiveSupport::TestCase
     File.write(outside_lock, 'outside lock marker', mode: 'w', encoding: 'UTF-8')
     File.symlink(outside_lock, lock_path)
 
-    error = assert_raises(RuntimeError) { @store.install!(@manifest) }
+    error = assert_raises(UserSongStore::UnsafePath) { @store.install!(@manifest) }
 
     assert_match(/Unsafe song storage path/, error.message)
     assert File.symlink?(lock_path)
@@ -208,7 +234,7 @@ class UserSongStoreInstallAtomicityTest < ActiveSupport::TestCase
     missing_target = File.join(@temporary_root, 'missing-install.lock')
     File.symlink(missing_target, lock_path)
 
-    error = assert_raises(RuntimeError) { @store.install!(@manifest) }
+    error = assert_raises(UserSongStore::UnsafePath) { @store.install!(@manifest) }
 
     assert_match(/Unsafe song storage path/, error.message)
     assert File.symlink?(lock_path)
