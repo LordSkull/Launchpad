@@ -18,6 +18,7 @@
     zipEntries: [],
     zipParsedSuccessfully: false,
     duplicateZipEntry: null,
+    backslashZipEntry: false,
     samples: createChainState(function () { return []; }),
     mappings: createChainState(blank48),
     holdToPlay: createChainState(function () { return new Set(); }),
@@ -144,10 +145,16 @@
     state.zipFile = file;
     state.zipParsedSuccessfully = false;
     state.duplicateZipEntry = null;
+    state.backslashZipEntry = false;
     $('zipStatus').textContent = 'Reading ZIP directory...';
 
     try {
       var entries = await listZipEntries(file);
+      var backslashEntry = findBackslashEntryName(entries);
+      if (backslashEntry !== null) {
+        state.backslashZipEntry = true;
+        throw new Error('ZIP entry names must use forward slashes (/), not backslashes (\\).');
+      }
       var duplicateEntry = findDuplicateEntryName(entries);
       if (duplicateEntry !== null) {
         state.duplicateZipEntry = duplicateEntry;
@@ -232,6 +239,7 @@
     if (!/^[A-Za-z0-9_-]+$/.test(data.filename)) errors.push('ZIP filename may contain only letters, numbers, _ and -.');
     if (data.song_number !== null && (!(Number.isInteger(data.song_number)) || data.song_number < 1)) errors.push('Song ID must be a positive integer or blank.');
     if (!state.zipFile) errors.push('Select a sound ZIP.');
+    if (state.backslashZipEntry) errors.push('ZIP entry names must use forward slashes (/), not backslashes (\\).');
     if (state.duplicateZipEntry !== null) errors.push('Duplicate ZIP entry: ' + state.duplicateZipEntry);
 
     activeChains().forEach(function (chain, ci) {
@@ -374,6 +382,12 @@
 
   function sortedNumbers(set) { return Array.from(set).sort(function (a, b) { return a - b; }); }
   function unique(arr) { return arr.filter(function (v, i) { return arr.indexOf(v) === i; }); }
+  function findBackslashEntryName(entries) {
+    for (var i = 0; i < entries.length; i++) {
+      if (entries[i].indexOf('\\') !== -1) return entries[i];
+    }
+    return null;
+  }
   function findDuplicateEntryName(entries) {
     var seen = Object.create(null);
     for (var i = 0; i < entries.length; i++) {
@@ -415,7 +429,7 @@
       var extraLen = view.getUint16(pos + 30, true);
       var commentLen = view.getUint16(pos + 32, true);
       var nameBytes = bytes.slice(pos + 46, pos + 46 + nameLen);
-      entries.push(decoder.decode(nameBytes).replace(/\\/g, '/'));
+      entries.push(decoder.decode(nameBytes));
       pos += 46 + nameLen + extraLen + commentLen;
     }
     return entries;

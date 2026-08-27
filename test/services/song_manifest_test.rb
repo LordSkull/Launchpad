@@ -371,7 +371,7 @@ class SongManifestTest < ActiveSupport::TestCase
     end
   end
 
-  test 'entry names collapsed by current backslash normalization are duplicates' do
+  test 'slash and backslash variants fail for the backslash policy' do
     Dir.mktmpdir do |root|
       manifest = build_manifest(
         root,
@@ -380,7 +380,37 @@ class SongManifestTest < ActiveSupport::TestCase
       )
 
       refute manifest.valid?
-      assert_includes manifest.errors, 'Duplicate ZIP entry: metadata/item.txt'
+      assert_includes manifest.errors, 'ZIP entry names must use forward slashes (/), not backslashes (\\).'
+      refute manifest.errors.any? { |error| error.include?('Duplicate ZIP entry') }
+    end
+  end
+
+  test 'mapped backslash ZIP entry produces a safe semantic validation error' do
+    Dir.mktmpdir do |root|
+      data = manifest_with_samples('kick.mp3')
+      manifest = build_manifest(root, data, entries: ['sounds\\chain1\\kick.mp3'])
+
+      refute manifest.valid?
+      assert_equal ['ZIP entry names must use forward slashes (/), not backslashes (\\).'], manifest.errors
+      refute_includes manifest.errors.join(' '), root
+    end
+  end
+
+  test 'unused backslash ZIP entry invalidates the manifest' do
+    Dir.mktmpdir do |root|
+      manifest = build_manifest(root, valid_manifest_hash, entries: ['metadata\\item.txt'])
+
+      refute manifest.valid?
+      assert_equal ['ZIP entry names must use forward slashes (/), not backslashes (\\).'], manifest.errors
+    end
+  end
+
+  test 'forward slash ZIP entry remains valid' do
+    Dir.mktmpdir do |root|
+      data = manifest_with_samples('kick.mp3')
+      manifest = build_manifest(root, data, entries: ['sounds/chain1/kick.mp3'])
+
+      assert manifest.valid?, manifest.errors.inspect
     end
   end
 

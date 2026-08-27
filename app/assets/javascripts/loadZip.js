@@ -19,6 +19,22 @@ var Zip_Space = new function(){
     }
     return null;
   }
+
+  this.findBackslashEntryName = function(entries) {
+    for(var i = 0; i < entries.length; i++) {
+      if(entries[i].filename.indexOf('\\') !== -1)
+        return entries[i].filename;
+    }
+    return null;
+  }
+
+  function rejectZip(reader, message) {
+    Zip_Space.dataArray = {};
+    console.error(message);
+    $(".soundPack").html("ZIP load failed.");
+    $("#error_msg").text(message);
+    reader.close(function() {});
+  }
   
   // recursively iterate over the entries
   interateEntries = function(entries, i, reader, callback){
@@ -56,13 +72,14 @@ var Zip_Space = new function(){
           $(".soundPack").html("Extracting Sounds...");
           // get all entries from the zip
           reader.getEntries(function(entries) {
+            var backslashEntry = Zip_Space.findBackslashEntryName(entries);
+            if(backslashEntry !== null) {
+              rejectZip(reader, "ZIP entry names must use forward slashes (/), not backslashes (\\).");
+              return;
+            }
             var duplicateEntry = Zip_Space.findDuplicateEntryName(entries);
             if(duplicateEntry !== null) {
-              Zip_Space.dataArray = {};
-              console.error("Duplicate ZIP entry: " + duplicateEntry);
-              $(".soundPack").html("ZIP load failed.");
-              $("#error_msg").text("Duplicate ZIP entry: " + duplicateEntry);
-              reader.close(function() {});
+              rejectZip(reader, "Duplicate ZIP entry: " + duplicateEntry);
               return;
             }
             interateEntries(entries, 0, reader, callback);
