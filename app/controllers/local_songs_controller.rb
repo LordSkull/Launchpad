@@ -16,6 +16,8 @@ class LocalSongsController < ApplicationController
       ok: true,
       songs: store.list
     }
+  rescue StandardError => e
+    render_internal_error(e, context: 'Song catalog failed')
   end
 
   def create
@@ -48,6 +50,15 @@ class LocalSongsController < ApplicationController
       manifest = SongManifest.new(manifest_file.path, zip_upload.tempfile.path).validate!
 
       unless manifest.valid?
+        if manifest.invalid_json?
+          return render json: {
+            ok: false,
+            error: 'Invalid manifest JSON.',
+            errors: manifest.errors,
+            warnings: manifest.warnings
+          }, status: :bad_request
+        end
+
         return render json: {
           ok: false,
           error: 'Song package is invalid.',
@@ -74,8 +85,17 @@ class LocalSongsController < ApplicationController
     ensure
       manifest_file.close!
     end
+  rescue UserSongStore::Conflict => e
+    render json: { ok: false, error: e.message }, status: :conflict
+  rescue UserSongStore::InvalidFilename => e
+    render json: {
+      ok: false,
+      error: 'Song package is invalid.',
+      errors: [e.message],
+      warnings: []
+    }, status: :unprocessable_entity
   rescue StandardError => e
-    render_exception(e, 'Song import failed')
+    render_internal_error(e, context: 'Song import failed')
   end
 
   def destroy
@@ -89,8 +109,10 @@ class LocalSongsController < ApplicationController
       message: 'Song removed successfully.',
       song: { name: song['song_name'], filename: filename }
     }
+  rescue UserSongStore::NotFound, UserSongStore::InvalidFilename
+    render json: { ok: false, error: 'Song not found.' }, status: :not_found
   rescue StandardError => e
-    render_exception(e, 'Song removal failed')
+    render_internal_error(e, context: 'Song removal failed')
   end
 
   # Existing loadZip.js requests /zip/sounds/<filename>.zip.
@@ -120,9 +142,11 @@ class LocalSongsController < ApplicationController
       self.response_body = body
       handed_off = true
     end
-  rescue StandardError => e
-    Rails.logger.warn("User song ZIP not found: #{e.message}")
+  rescue UserSongStore::NotFound, UserSongStore::InvalidFilename
     head :not_found
+  rescue StandardError => e
+    log_internal_error(e, context: 'User song ZIP delivery failed')
+    head :internal_server_error
   ensure
     body.close if defined?(body) && body && !handed_off
   end
@@ -137,9 +161,13 @@ class LocalSongsController < ApplicationController
     head :not_found unless Rails.env.development?
   end
 
-  def render_exception(error, prefix)
-    Rails.logger.error("#{prefix}: #{error.class}: #{error.message}")
+  def render_internal_error(error, context:)
+    log_internal_error(error, context: context)
+    render json: { ok: false, error: 'Internal server error.' }, status: :internal_server_error
+  end
+
+  def log_internal_error(error, context:)
+    Rails.logger.error("#{context}: #{error.class}: #{error.message}")
     Rails.logger.error(error.backtrace.join("\n")) if error.backtrace
-    render json: { ok: false, error: error.message }, status: :unprocessable_entity
   end
 end

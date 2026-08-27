@@ -66,9 +66,10 @@ class UserSongStoreTest < ActiveSupport::TestCase
         'C:\\outside', 'C:/outside', '\\\\server\\share', 'foo/bar',
         'foo\\bar', '.', '..', '...', '%2e%2e', 'é', '.hidden'
       ].each do |filename|
-        assert_raises(RuntimeError, "Expected #{filename.inspect} to be rejected") do
+        error = assert_raises(UserSongStore::InvalidFilename, "Expected #{filename.inspect} to be rejected") do
           store.remove!(filename)
         end
+        assert_kind_of RuntimeError, error
 
         assert File.directory?(song_dir), "Expected the installed song to survive #{filename.inspect}"
         assert_equal 'outside marker', File.read(marker_path, encoding: 'UTF-8')
@@ -93,7 +94,7 @@ class UserSongStoreTest < ActiveSupport::TestCase
       write_store_entry(store, 'victim', JSON.generate('song_name' => 'Victim'))
       write_store_entry(store, ' victim', JSON.generate('song_name' => 'Malformed Alias'))
 
-      assert_raises(RuntimeError) { store.remove!(' victim') }
+      assert_raises(UserSongStore::InvalidFilename) { store.remove!(' victim') }
       assert File.directory?(victim_dir)
       assert_equal 'Victim', JSON.parse(File.read(File.join(victim_dir, 'song.json')))['song_name']
     end
