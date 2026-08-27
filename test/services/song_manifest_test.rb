@@ -2,6 +2,7 @@ require 'test_helper'
 require 'tmpdir'
 require 'json'
 require 'minitest/mock'
+require 'zlib'
 require Rails.root.join('script', 'song_tool').to_s
 
 class SongManifestTest < ActiveSupport::TestCase
@@ -303,6 +304,86 @@ class SongManifestTest < ActiveSupport::TestCase
     end
   end
 
+  test 'duplicate mapped ZIP entry invalidates the manifest' do
+    Dir.mktmpdir do |root|
+      data = manifest_with_samples('kick.mp3')
+      manifest = build_manifest(
+        root,
+        data,
+        entries: ['sounds/chain1/kick.mp3', 'sounds/chain1/kick.mp3']
+      )
+
+      refute manifest.valid?
+      assert_includes manifest.errors, 'Duplicate ZIP entry: sounds/chain1/kick.mp3'
+    end
+  end
+
+  test 'duplicate mapped ZIP entries with different contents invalidate the manifest' do
+    Dir.mktmpdir do |root|
+      data = manifest_with_samples('kick.mp3')
+      manifest = build_manifest_with_contents(
+        root,
+        data,
+        entries: [
+          ['sounds/chain1/kick.mp3', 'first'],
+          ['sounds/chain1/kick.mp3', 'different second content']
+        ]
+      )
+
+      refute manifest.valid?
+      assert_includes manifest.errors, 'Duplicate ZIP entry: sounds/chain1/kick.mp3'
+    end
+  end
+
+  test 'duplicate unused ZIP entry invalidates the manifest' do
+    Dir.mktmpdir do |root|
+      manifest = build_manifest(
+        root,
+        valid_manifest_hash,
+        entries: ['unused.txt', 'unused.txt']
+      )
+
+      refute manifest.valid?
+      assert_includes manifest.errors, 'Duplicate ZIP entry: unused.txt'
+    end
+  end
+
+  test 'case-distinct ZIP entries are not duplicates' do
+    Dir.mktmpdir do |root|
+      data = manifest_with_samples('kick.mp3')
+      manifest = build_manifest(
+        root,
+        data,
+        entries: ['sounds/chain1/kick.mp3', 'sounds/chain1/KICK.MP3']
+      )
+
+      assert manifest.valid?, manifest.errors.inspect
+      refute manifest.errors.any? { |error| error.include?('Duplicate ZIP entry') }
+    end
+  end
+
+  test 'duplicate directory identifiers invalidate the manifest' do
+    Dir.mktmpdir do |root|
+      manifest = build_manifest(root, valid_manifest_hash, entries: ['samples/', 'samples/'])
+
+      refute manifest.valid?
+      assert_includes manifest.errors, 'Duplicate ZIP entry: samples/'
+    end
+  end
+
+  test 'entry names collapsed by current backslash normalization are duplicates' do
+    Dir.mktmpdir do |root|
+      manifest = build_manifest(
+        root,
+        valid_manifest_hash,
+        entries: ['metadata/item.txt', 'metadata\\item.txt']
+      )
+
+      refute manifest.valid?
+      assert_includes manifest.errors, 'Duplicate ZIP entry: metadata/item.txt'
+    end
+  end
+
   test 'non audio zip entries do not satisfy a sample mapping' do
     Dir.mktmpdir do |root|
       data = manifest_with_samples('notes.txt')
@@ -395,6 +476,15 @@ class SongManifestTest < ActiveSupport::TestCase
     SongManifest.new(manifest_path, zip_path).validate!
   end
 
+  def build_manifest_with_contents(root, data, entries:)
+    manifest_path = File.join(root, 'song.json')
+    zip_path = File.join(root, 'sounds.zip')
+    File.write(manifest_path, JSON.generate(data), mode: 'w', encoding: 'UTF-8')
+    write_zip_with_contents(zip_path, entries)
+
+    SongManifest.new(manifest_path, zip_path).validate!
+  end
+
   def write_zip(path, entries)
     central_directory = entries.map { |entry| central_directory_entry(entry) }.join.b
     eocd = [
@@ -410,5 +500,35 @@ class SongManifestTest < ActiveSupport::TestCase
       0x02014b50, 20, 20, 0x0800, 0, 0, 0, 0, 0, 0,
       name.bytesize, 0, 0, 0, 0, 0, 0, 0
     ].pack('VvvvvvvVVVvvvvvVV') + name
+  end
+
+  def write_zip_with_contents(path, entries)
+    local_records = []
+    central_records = []
+    offset = 0
+
+    entries.each do |name, content|
+      name = name.b
+      content = content.b
+      crc = Zlib.crc32(content)
+      local_record = [
+        0x04034b50, 20, 0x0800, 0, 0, 0, crc, content.bytesize,
+        content.bytesize, name.bytesize, 0
+      ].pack('VvvvvvVVVvv') + name + content
+      central_record = [
+        0x02014b50, 20, 20, 0x0800, 0, 0, 0, crc, content.bytesize,
+        content.bytesize, name.bytesize, 0, 0, 0, 0, 0, offset
+      ].pack('VvvvvvvVVVvvvvvVV') + name
+      local_records << local_record
+      central_records << central_record
+      offset += local_record.bytesize
+    end
+
+    central_directory = central_records.join.b
+    eocd = [
+      0x06054b50, 0, 0, entries.length, entries.length,
+      central_directory.bytesize, offset, 0
+    ].pack('VvvvvVVv')
+    File.binwrite(path, local_records.join.b + central_directory + eocd)
   end
 end

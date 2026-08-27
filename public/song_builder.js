@@ -17,6 +17,7 @@
     zipFile: null,
     zipEntries: [],
     zipParsedSuccessfully: false,
+    duplicateZipEntry: null,
     samples: createChainState(function () { return []; }),
     mappings: createChainState(blank48),
     holdToPlay: createChainState(function () { return new Set(); }),
@@ -142,10 +143,16 @@
     if (!file) return;
     state.zipFile = file;
     state.zipParsedSuccessfully = false;
+    state.duplicateZipEntry = null;
     $('zipStatus').textContent = 'Reading ZIP directory...';
 
     try {
       var entries = await listZipEntries(file);
+      var duplicateEntry = findDuplicateEntryName(entries);
+      if (duplicateEntry !== null) {
+        state.duplicateZipEntry = duplicateEntry;
+        throw new Error('Duplicate ZIP entry: ' + duplicateEntry);
+      }
       state.zipEntries = entries;
       state.samples = createChainState(function () { return []; });
 
@@ -225,6 +232,7 @@
     if (!/^[A-Za-z0-9_-]+$/.test(data.filename)) errors.push('ZIP filename may contain only letters, numbers, _ and -.');
     if (data.song_number !== null && (!(Number.isInteger(data.song_number)) || data.song_number < 1)) errors.push('Song ID must be a positive integer or blank.');
     if (!state.zipFile) errors.push('Select a sound ZIP.');
+    if (state.duplicateZipEntry !== null) errors.push('Duplicate ZIP entry: ' + state.duplicateZipEntry);
 
     activeChains().forEach(function (chain, ci) {
       if (data.mappings[chain].length !== 48) errors.push(chain + ' does not contain 48 pad positions.');
@@ -366,6 +374,14 @@
 
   function sortedNumbers(set) { return Array.from(set).sort(function (a, b) { return a - b; }); }
   function unique(arr) { return arr.filter(function (v, i) { return arr.indexOf(v) === i; }); }
+  function findDuplicateEntryName(entries) {
+    var seen = Object.create(null);
+    for (var i = 0; i < entries.length; i++) {
+      if (Object.prototype.hasOwnProperty.call(seen, entries[i])) return entries[i];
+      seen[entries[i]] = true;
+    }
+    return null;
+  }
   function naturalSort(a, b) { return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }); }
 
   function variableFromFilename(value) {

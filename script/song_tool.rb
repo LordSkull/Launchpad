@@ -99,6 +99,7 @@ class SongManifest
   def validate!
     return self unless errors.empty?
 
+    validate_zip_entry_uniqueness
     validate_metadata
     validate_chain_count
     validate_mappings
@@ -142,6 +143,19 @@ class SongManifest
   end
 
   private
+
+  def validate_zip_entry_uniqueness
+    seen = {}
+    reported = {}
+
+    entries.each do |entry|
+      if seen[entry] && !reported[entry]
+        errors << "Duplicate ZIP entry: #{entry}"
+        reported[entry] = true
+      end
+      seen[entry] = true
+    end
+  end
 
   def validate_metadata
     name = data['song_name'].to_s.strip
